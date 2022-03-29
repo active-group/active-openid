@@ -1,0 +1,8 @@
+{:deps  {de.active-group/active-openid       {:local/root ".."}
+         de.active-group/active-logger       {:mvn/version "0.6.0"}
+         metosin/reitit                      {:mvn/version "0.5.17"}
+         ring/ring                           {:mvn/version "1.9.5"}
+         ring/ring-defaults                  {:mvn/version "0.3.3"}
+         camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.2"}
+         hiccup/hiccup                       {:mvn/version "1.0.5"}}
+ :paths ["src"]}
