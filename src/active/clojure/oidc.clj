@@ -1,9 +1,13 @@
 (ns active.clojure.oidc
   (:require [active.clojure.config :as active-config]
+            [active.clojure.config :as config]
+            [active.clojure.lens :as lens]
+            [active.clojure.oidc :as oidc]
             [active.clojure.oidc.config :as oidc-config]
             [active.clojure.record :refer [define-record-type]]
             [clj-http.client :as http-client]
             [clj-time.core :as time]
+            [clojure.data.json :as json]
             [clojure.string :as string]
             [crypto.random :as random]
             [ring.middleware.params :refer [wrap-params]]
@@ -11,43 +15,50 @@
             [ring.util.response :as response])
   (:import [java.net URI]))
 
+(define-record-type OpenIdProviderConfig
+  make-openid-provider-config openid-provider-config?
+  [authorize-endpoint     openid-provider-config-authorize-endpoint
+   token-endpoint         openid-provider-config-token-endpoint
+   userinfo-endpoint      openid-provider-config-userinfo-endpoint
+   end-session-endpoint   openid-provider-config-end-session-endpoint
+   check-session-endpoint openid-provider-config-check-session-endpoint])
+
 (define-record-type ^{:doc "Wraps all necessary information for a oidc identity provider profile."}
   OidcProfile
   make-oidc-profile oidc-profile?
-  [name             oidc-profile-name
-   authorize-uri    oidc-profile-authorize-uri
-   access-token-uri oidc-profile-access-token-uri
-   userinfo-uri     oidc-profile-userinfo-uri
-   client-id        oidc-profile-client-id
-   client-secret    oidc-profile-client-secret
-   scopes           oidc-profile-scopes
-   launch-uri       oidc-profile-launch-uri
-   redirect-uri     oidc-profile-redirect-uri
-   landing-uri      oidc-profile-landing-uri
-   logout-uri       oidc-profile-logout-uri
-   basic-auth?      oidc-profile-basic-auth?])
+  [name                   oidc-profile-name
+   openid-provider-config oidc-profile-openid-provider-config
+   client-id              oidc-profile-client-id
+   client-secret          oidc-profile-client-secret
+   scopes                 oidc-profile-scopes
+   launch-uri             oidc-profile-launch-uri
+   redirect-uri           oidc-profile-redirect-uri
+   landing-uri            oidc-profile-landing-uri
+   logout-uri             oidc-profile-logout-uri
+   basic-auth?            oidc-profile-basic-auth?])
 
-(defn make-openid-connect-uri
-  [scheme host port realm endpoint]
-  (if port
-    (format "%s://%s:%d/auth/realms/%s/protocol/openid-connect/%s"
-            scheme host port realm endpoint)
-    (format "%s://%s/auth/realms/%s/protocol/openid-connect/%s"
-            scheme host realm endpoint)))
-
-(defn make-authorize-uri
-  "Constructs a uri-string from the args that points to an authorize endpoint."
+(defn get-openid-configuration-url
   [scheme host port realm]
-  (make-openid-connect-uri scheme host port realm "auth"))
+  (format "%s://%s:%d/auth/realms/%s/.well-known/openid-configuration" scheme host port realm))
 
-(defn make-token-uri
-  "Constructs a uri-string from the args that points to a token endpoint."
-  [scheme host port realm]
-  (make-openid-connect-uri scheme host port realm "token"))
+(defn get-openid-provider-config!
+  "Based on the connection parameters, fetches the openid provider
+  configuration from the .well-known json object provided by the idp.
 
-(defn make-userinfo-uri
+  Also see [here](https://ldapwiki.com/wiki/Openid-configuration)."
   [scheme host port realm]
-  (make-openid-connect-uri scheme host port realm "userinfo"))
+  (try (let [configuration-url     (get-openid-configuration-url scheme host port realm)
+             {:keys [status body]} (http-client/get configuration-url)]
+         (case status
+           200 (let [json-map (json/read-str body)]
+                 (make-openid-provider-config (get json-map "authorization_endpoint")
+                                              (get json-map "token_endpoint")
+                                              (get json-map "userinfo_endpoint")
+                                              (get json-map "end_session_endpoint")
+                                              (get json-map "check_session_endpoint")))
+           "error"))
+       (catch Exception e
+         [:error (.getMessage e)])))
 
 (defn make-oidc-profiles
   "Takes a [[active.clojure.config/Configuration]] and extracts all
@@ -56,24 +67,22 @@
   (let [oidc-profiles-config
         (active-config/section-subconfig config oidc-config/section)]
     (mapv (fn [c]
-            (let [scheme (active-config/access c oidc-config/oidc-scheme)
-                  host   (active-config/access c oidc-config/oidc-host)
-                  port   (active-config/access c oidc-config/oidc-port)
-                  realm  (active-config/access c oidc-config/oidc-realm)
-                  client (active-config/access c oidc-config/oidc-client)]
+            (let [scheme                 (active-config/access c oidc-config/oidc-scheme)
+                  host                   (active-config/access c oidc-config/oidc-host)
+                  port                   (active-config/access c oidc-config/oidc-port)
+                  realm                  (active-config/access c oidc-config/oidc-realm)
+                  client                 (active-config/access c oidc-config/oidc-client)
+                  openid-provider-config (get-openid-provider-config! scheme host port realm)]
               (make-oidc-profile (active-config/access c oidc-config/oidc-name)
-                                   (make-authorize-uri scheme host port realm)
-                                   (make-token-uri scheme host port realm)
-                                   (make-userinfo-uri scheme host port realm)
-                                   (active-config/access c oidc-config/oidc-client)
-                                   (active-config/access c oidc-config/oidc-client-secret)
-                                   (active-config/access c oidc-config/oidc-scopes)
-                                   (active-config/access c oidc-config/oidc-launch-uri)
-                                   (active-config/access c oidc-config/oidc-redirect-uri)
-                                   #_(active-config/access c oidc-config/oidc-landing-uri)
-                                   "/"
-                                   (active-config/access c oidc-config/oidc-logout-uri)
-                                   (active-config/access c oidc-config/oidc-basic-auth?))))
+                                 openid-provider-config
+                                 (active-config/access c oidc-config/oidc-client)
+                                 (active-config/access c oidc-config/oidc-client-secret)
+                                 (active-config/access c oidc-config/oidc-scopes)
+                                 (active-config/access c oidc-config/oidc-launch-uri)
+                                 (active-config/access c oidc-config/oidc-redirect-uri)
+                                 (active-config/access c oidc-config/oidc-landing-uri)
+                                 (active-config/access c oidc-config/oidc-logout-uri)
+                                 (active-config/access c oidc-config/oidc-basic-auth?))))
           oidc-profiles-config)))
 
 (defn join-scopes
@@ -83,18 +92,15 @@
 
 (defn authorize-uri
   [oidc-profile state]
-  (str (oidc-profile-authorize-uri oidc-profile)
-       (if (string/includes? (oidc-profile-authorize-uri oidc-profile) "?") "&" "?")
-       (let [redirect-uri (oidc-profile-redirect-uri oidc-profile)]
-         (codec/form-encode (merge
-                             {:response_type "code"
-                              :client_id     (oidc-profile-client-id oidc-profile)
-                              ;;:scope         (join-scopes oidc-profile)
-                              :state         state
-                              }
-                             nil
-                             #_(when-not (empty? redirect-uri)
-                               {:redirect_uri redirect-uri}))))))
+  (let [authorize-uri (lens/yank oidc-profile (lens/>> oidc-profile-openid-provider-config
+                                                       openid-provider-config-authorize-endpoint))]
+    (str authorize-uri
+         (if (string/includes? authorize-uri "?") "&" "?")
+         (let [redirect-uri (oidc-profile-redirect-uri oidc-profile)]
+           (codec/form-encode {:response_type "code"
+                               :client_id     (oidc-profile-client-id oidc-profile)
+                               :redirect_uri  (oidc-profile-redirect-uri oidc-profile)
+                               :state         state})))))
 
 (defn- random-state
   []
@@ -152,7 +158,8 @@
 
   Might throw an exception."
   [oidc-profile request]
-  (let [access-token-uri (oidc-profile-access-token-uri oidc-profile)
+  (let [access-token-uri (lens/yank oidc-profile (lens/>> oidc-profile-openid-provider-config
+                                                          openid-provider-config-token-endpoint))
         client-id        (oidc-profile-client-id oidc-profile)
         client-secret    (oidc-profile-client-secret oidc-profile)
         basic-auth?      (oidc-profile-basic-auth? oidc-profile)]
@@ -193,16 +200,31 @@
 
       :else
       (try 
-        (let [access-token (get-access-token oidc-profile request)]
-          (-> (response/redirect (oidc-profile-landing-uri oidc-profile))
-              (assoc :session (-> session
-                                  (assoc-in [::access-tokens (oidc-profile-name oidc-profile)] access-token)
-                                  (dissoc ::authorize-state)))))
+        (let [access-token (get-access-token oidc-profile request)
+              resp (-> (response/redirect (oidc-profile-landing-uri oidc-profile))
+                       (assoc :session (-> session
+                                           (assoc-in [::access-tokens (oidc-profile-name oidc-profile)] access-token)
+                                           (dissoc ::authorize-state))))]
+          resp)
         (catch Exception e
           (-> (response/response {:exception (.getClass e)
                                   :message   (.getMessage e)})
               (response/status 500)
               (response/header "Content-Type" "application/json")))))))
+
+(defn oidc-logout
+  "Function that performs a logout at the idp for the current user.
+  Clears the whole :session for the `oidc-profile`."
+  [oidc-profile]
+  (let [end-session-endpoint
+        (lens/yank oidc-profile (lens/>> oidc-profile-openid-provider-config
+                                         openid-provider-config-end-session-endpoint))]
+    (-> (response/redirect
+         (str end-session-endpoint
+              "?"
+              (codec/form-encode {:post_logout_redirect_uri (str "http://localhost:1414"
+                                                                 (oidc-profile-landing-uri oidc-profile))})))
+        (update-in [:session ::access-tokens] dissoc (oidc-profile-name oidc-profile)))))
 
 (defn reitit-routes-for-profile
   "For a given [[OidcProfile]], returns a vector containing the launch-
