@@ -4,7 +4,7 @@ build:
 	clojure -T:active-openid/build jar
 
 deploy:
-	clojure -T:active-openid/build reploy
+	clojure -T:active-openid/build deploy
 
 test:
 	clojure -X:active-openid/test
