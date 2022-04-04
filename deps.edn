@@ -2,10 +2,12 @@
         clj-time/clj-time              {:mvn/version "0.15.2"}
         ring/ring                      {:mvn/version "1.9.5"}
         clj-http/clj-http              {:mvn/version "3.12.3"}
-        org.clojure/data.json          {:mvn/version "2.4.0"}}
+        org.clojure/data.json          {:mvn/version "2.4.0"}
+        compojure/compojure            {:mvn/version "1.6.2"}}
 
  :paths ["src"]
 
  :aliases
- {:build {:deps       {io.github.clojure/tools.build {:git/tag "v0.8.1" :git/sha "7d40500"}}
-          :ns-default build}}}
+ {:active-keycloak/build
+  {:deps       {io.github.clojure/tools.build {:git/tag "v0.8.1" :git/sha "7d40500"}}
+   :ns-default build}}}
