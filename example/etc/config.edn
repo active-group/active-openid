@@ -1,13 +1,14 @@
 {:openid-connect
- [{:name          "keycloak"
-   :host          "localhost"
-   :port          8080
-   :scheme        "http"
+ [{:name                   "keycloak"
+   :host                   "localhost"
+   :port                   8080
+   :scheme                 "http"
    :realm         "realm-name"
    :client        "client-id"
-   :client-secret "eF3qgv1A3NVeQ7Dr7hls2KqbhXhInyPF"
-   :scopes        ["email" "roles"]
-   :launch-uri    "/auth/login"
-   :redirect-uri  "/auth/login-callback"
-   :landing-uri   "/login"
-   :logout-uri    "/auth/logout"}]}
+   :client-secret          "eF3qgv1A3NVeQ7Dr7hls2KqbhXhInyPF"
+   :scopes                 ["email" "roles"]
+   :launch-uri             "/auth/login"
+   :redirect-uri           "/auth/login-callback"
+   :landing-uri            "/login"
+   :logout-uri             "/auth/logout"
+   :backchannel-logout-uri "/auth/backchannel-logout"}]}
