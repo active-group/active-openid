@@ -1,3 +1,6 @@
 build:
-	clojure -T:active-keycloak/build jar
+	clojure -T:active-openid/build jar
 .PHOHNY: build
+
+release:
+	clojure -T:active-openid/build release
