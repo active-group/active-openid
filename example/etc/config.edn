@@ -1,4 +1,4 @@
-{:openid-connect
+{:openid
  [{:name                   "keycloak"
    :host                   "localhost"
    :port                   8080
@@ -10,5 +10,4 @@
    :launch-uri             "/auth/login"
    :redirect-uri           "/auth/login-callback"
    :landing-uri            "/login"
-   :logout-uri             "/auth/logout"
-   :backchannel-logout-uri "/auth/backchannel-logout"}]}
+   :logout-uri             "/auth/logout"}]}
