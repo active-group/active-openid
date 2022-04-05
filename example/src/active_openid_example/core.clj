@@ -4,8 +4,8 @@
             [active.clojure.lens :as lens]
             [active.clojure.logger.event :as log]
             [active.clojure.logger.log4j :as log4j]
-            [active.clojure.oidc :as oidc]
-            [active.clojure.oidc.config :as oidc-config]
+            [active.clojure.openid :as openid]
+            [active.clojure.openid.config :as openid-config]
             [active.clojure.record :refer [define-record-type]]
             [camel-snake-kebab.core :as csk]
             [clj-http.client :as http-client]
@@ -31,34 +31,34 @@
       (assoc-in [:session :cookie-attrs :same-site] :lax)))
 
 (defn fetch-user-data
-  [oidc-profiles access-tokens]
+  [openid-profiles access-tokens]
   ;; There is at most one session.
-  (let [[oidc-profile token token-type]
-        (->> oidc-profiles
-             (mapv (fn [oidc-profile]
-                     [oidc-profile
-                      (get-in access-tokens [(oidc/oidc-profile-name oidc-profile) :token])
-                      (get-in access-tokens [(oidc/oidc-profile-name oidc-profile) :extra-data :token_type])]))
+  (let [[openid-profile token token-type]
+        (->> openid-profiles
+             (mapv (fn [openid-profile]
+                     [openid-profile
+                      (get-in access-tokens [(openid/openid-profile-name openid-profile) :token])
+                      (get-in access-tokens [(openid/openid-profile-name openid-profile) :extra-data :token_type])]))
              (filter (comp some? second))
              first)]
     (when token
       (let [response
-            (http-client/get (lens/yank oidc-profile (lens/>> oidc/oidc-profile-openid-provider-config
-                                                              oidc/openid-provider-config-userinfo-endpoint))
+            (http-client/get (lens/yank openid-profile (lens/>> openid/openid-profile-openid-provider-config
+                                                              openid/openid-provider-config-userinfo-endpoint))
                              {:headers {:authorization (str token-type " " token)}})]
         (when (= (:status response) 200)
           (let [user-data (json/read-str (:body response) :key-fn csk/->kebab-case-keyword)]
             {:id     (:id user-data)
              :login  (:username user-data)
              :name   (:name user-data)
-             :source (oidc/oidc-profile-name oidc-profile)
+             :source (openid/openid-profile-name openid-profile)
              :rest user-data}))))))
 
 (defn app-handler
-  [oidc-profiles]
+  [openid-profiles]
   (fn [req]
     (let [user-info (or (-> req :session :user-info)
-                        (fetch-user-data oidc-profiles (-> req :session ::oidc/access-tokens)))
+                        (fetch-user-data openid-profiles (-> req :session ::openid/access-tokens)))
           resp      {:status  200
                      :headers {"Content-Type" "text/html"}
                      :body
@@ -77,27 +77,28 @@
                                  (when user-info
                                    [:p
                                     [:a {:href "/logout"} "Logout"]])]
-                                (mapv (fn [oidc-profile]
+                                (mapv (fn [openid-profile]
                                         (let [check-session-iframe
-                                              (-> (oidc/oidc-profile-openid-provider-config oidc-profile)
-                                                  oidc/openid-provider-config-check-session-endpoint)]
+                                              (-> (openid/openid-profile-openid-provider-config openid-profile)
+                                                  openid/openid-provider-config-check-session-endpoint)]
                                           [:div
                                            [:p
-                                            [:a {:href (oidc/oidc-profile-launch-uri oidc-profile)}
-                                             (str "Login via " (oidc/oidc-profile-name oidc-profile))]]]))
-                                      oidc-profiles))]])}
+                                            [:a {:href (openid/launch-uri openid-profile)}
+                                             (str "Login via " (openid/openid-profile-name openid-profile))]]]))
+                                      openid-profiles))]])}
           session   (-> (:session req)
                         (assoc :user-info user-info))]
       (-> resp
           (assoc :session session)))))
 
 (defn logout-handler
-  [oidc-profile]
+  [openid-profiles]
   (fn [req]
-    (let [end-session-endpoint
-          (lens/yank oidc-profile (lens/>> oidc/oidc-profile-openid-provider-config
-                                           oidc/openid-provider-config-end-session-endpoint))]
-      (oidc/oidc-logout oidc-profile))))
+    (let [openid-profile (openid/req->openid-profile req openid-profiles)
+          end-session-endpoint
+          (lens/yank openid-profile (lens/>> openid/openid-profile-openid-provider-config
+                                             openid/openid-provider-config-end-session-endpoint))]
+      (openid/openid-logout openid-profile))))
 
 (def not-found-handler
   (constantly
@@ -110,13 +111,13 @@
 
 (defn app
   [config]
-  (let [oidc-profiles (oidc/make-oidc-profiles! config)]
+  (let [openid-profiles (openid/make-openid-profiles! config)]
     (rr/ring-handler 
      (rr/router
-      (concat (oidc/reitit-routes oidc-profiles)
+      (concat (openid/reitit-routes openid-profiles)
               [["/" {:get {:handler (fn [_] (response/redirect "/login"))}}]
-               ["/login"  {:get {:handler (app-handler oidc-profiles)}}]
-               ["/logout" {:get {:handler (logout-handler (first oidc-profiles))}}]])
+               ["/login"  {:get {:handler (app-handler openid-profiles)}}]
+               ["/logout" {:get {:handler (logout-handler openid-profiles)}}]])
       {:data {:middleware [[ring-session/wrap-session (:session ring-config)]
                            [ring-cookies/wrap-cookies]]}}))))
 
@@ -142,11 +143,10 @@
   (let [config (->> (slurp "./etc/config.edn")
                     edn/read-string
                     (active-config/make-configuration (active-config/schema "The schema"
-                                                                            oidc-config/section)
+                                                                            openid-config/section)
                                                       []))]
     (log4j/redirect-log4j!)
     (log/set-global-log-events-config-from-map! {:min-level :info})
     (start-server config)))
 
 (run)
-(stop-server)

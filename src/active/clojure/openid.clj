@@ -6,6 +6,7 @@
             [active.clojure.openid :as openid]
             [active.clojure.openid.config :as openid-config]
             [active.clojure.record :refer [define-record-type]]
+            [clojure.spec.alpha :as s]
             [clj-http.client :as http-client]
             [clj-time.core :as time]
             [clojure.data.json :as json]
@@ -39,6 +40,20 @@
    landing-uri            openid-profile-landing-uri
    logout-uri             openid-profile-logout-uri
    basic-auth?            openid-profile-basic-auth?])
+
+(defn- prefixed
+  [openid-profile lens]
+  (str "/" (openid-profile-name openid-profile) (lens openid-profile)))
+
+(defn launch-uri
+  "Returns the qualified launch-uri of an `openid-profile`."
+  [openid-profile]
+  (prefixed openid-profile openid-profile-launch-uri))
+
+(defn redirect-uri
+  "Returns the qualified redirect-uri of an `openid-profile`."
+  [openid-profile]
+  (prefixed openid-profile openid-profile-redirect-uri))
 
 (defn get-openid-configuration-url
   [scheme host port realm]
@@ -129,11 +144,10 @@
                                                        openid-provider-config-authorize-endpoint))]
     (str authorize-uri
          (if (string/includes? authorize-uri "?") "&" "?")
-         (let [redirect-uri (openid-profile-redirect-uri openid-profile)]
-           (codec/form-encode {:response_type "code"
-                               :client_id     (openid-profile-client-id openid-profile)
-                               :redirect_uri  (openid-profile-redirect-uri openid-profile)
-                               :state         state})))))
+         (codec/form-encode {:response_type "code"
+                             :client_id     (openid-profile-client-id openid-profile)
+                             :redirect_uri  (redirect-uri openid-profile)
+                             :state         state}))))
 
 (defn- random-state
   []
@@ -173,7 +187,7 @@
   [openid-profile request]
   {:grant_type   "authorization_code"
    :code         (get-authorization-code request)
-   :redirect_uri (openid-profile-redirect-uri openid-profile)})
+   :redirect_uri (redirect-uri openid-profile)})
 
 (defn- add-header-credentials
   [options client-id client-secret]
@@ -216,6 +230,18 @@
 (def ^:private no-auth-code-response {:status 400, :headers {}, :body "No authorization code"})
 (def ^:private default-no-auth-code-handler (constantly no-auth-code-response))
 
+
+;; Some specs just to make sure theres an understanding on how the
+;; session part of the request-map is supposed to be structured.
+(s/def ::profile-name (s/or :string string? :key keyword?))
+(s/def ::token string?)
+(s/def ::token-map (s/keys :req-un [::token]))
+(s/def ::access-tokens (s/map-of ::profile-name ::token-map))
+(s/def ::session (s/keys :req [::access-tokens]))
+(s/def ::request (s/keys :opt-un [::session]))
+
+(s/fdef make-redirect-handler
+  :ret (s/fspec :args (s/cat :req ::request)))
 (defn- make-redirect-handler
   ;; Creates a redirect (callback) handler for a `openid-profile`.  A
   ;; successful login might result in an exceptional state (i.e. when
@@ -249,6 +275,36 @@
   [openid-profile]
   (fn [req]
     (update-in req [:session ::access-tokens] dissoc (openid-profile-name openid-profile))))
+
+(s/fdef req->access-tokens
+  :args (s/cat :req ::request)
+  :ret (s/nilable ::access-tokens))
+(defn req->access-tokens
+  "Returns a map of all access-tokens from a ring `req`.  The format
+  is [name-of-profile access-token]."
+  [req]
+  (-> req :session ::access-tokens))
+
+(s/fdef req->access-token-for-profile
+  :args (s/cat :req ::request :openid-profile openid-profile?)
+  :ret (s/nilable ::token))
+(defn req->access-token-for-profile
+  "Returns the access token for `openid-profile` if there is one."
+  [req openid-profile]
+  (-> (req->access-tokens req)
+      (get-in [(openid-profile-name openid-profile) :token])))
+
+(s/fdef req->openid-profile
+  :args (s/cat :req ::request :openid-profiles (s/coll-of openid-profile?))
+  :ret (s/nilable openid-profile?))
+(defn req->openid-profile
+  "Get the [[OpenidProfile]] out of `openid-profiles` that is used for
+  `req`.  Assumes there is only one active session."
+  [req openid-profiles]
+  (let [access-tokens (req->access-tokens req)]
+    (first (filter (fn [openid-profile]
+                     (some? (req->access-token-for-profile req openid-profile)))
+                   openid-profiles))))
 
 (defn openid-logout
   "Function that performs a logout at the idp for the current user.
