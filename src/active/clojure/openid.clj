@@ -38,7 +38,6 @@
    redirect-uri           openid-profile-redirect-uri
    landing-uri            openid-profile-landing-uri
    logout-uri             openid-profile-logout-uri
-   backchannel-logout-uri openid-profile-backchannel-logout-uri
    basic-auth?            openid-profile-basic-auth?])
 
 (defn get-openid-configuration-url
@@ -112,7 +111,6 @@
                                    (active-config/access c openid-config/openid-redirect-uri)
                                    (active-config/access c openid-config/openid-landing-uri)
                                    (active-config/access c openid-config/openid-logout-uri)
-                                   (active-config/access c openid-config/openid-backchannel-logout-uri)
                                    (active-config/access c openid-config/openid-basic-auth?))
 
                 (openid-instance-not-available? openid-provider-config-or-error)
@@ -267,26 +265,18 @@
                                                                  (openid-profile-landing-uri openid-profile))})))
         destroy-user-session)))
 
-(defn make-backchannel-logout-handler
-  [openid-profile]
-  (fn [req]
-    (println "backchannel-logout-handler" req)
-    ((make-user-session-destroyer openid-profile) req)))
-
 (defn reitit-routes-for-profile
   "For a given [[OpenidProfile]], returns a vector containing the launch-
   and login-callback handlers."
   [openid-profile no-auth-code-handler state-mismatch-handler]
-  (->> (concat [[(openid-profile-launch-uri openid-profile)
-                 {:get {:handler (make-launch-handler openid-profile)}}]
-                [(openid-profile-redirect-uri openid-profile)
-                 {:get {:handler    (make-redirect-handler openid-profile no-auth-code-handler state-mismatch-handler)
-                        :middleware [[wrap-params]]}}]]
-               (when (openid-supports-backchannel-logout? openid-profile)
-                 [[(openid-profile-logout-uri openid-profile)
-                   {:post {:handler    (make-backchannel-logout-handler openid-profile)
-                           :middleware [[wrap-params]]}}]]))
-       (into [])))
+  (let [profile-name (openid-profile-name openid-profile)
+        namespaced   (fn [uri]
+                     (string/join "/" [profile-name uri]))]
+    [[(launch-uri openid-profile)
+      {:get {:handler (make-launch-handler openid-profile)}}]
+      [(redirect-uri openid-profile)
+       {:get {:handler    (make-redirect-handler openid-profile no-auth-code-handler state-mismatch-handler)
+              :middleware [[wrap-params]]}}]]))
 
 (defn reitit-routes
   "Based on a sequence of [[OpenidProfile]]s, returns a vector of two

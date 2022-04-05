@@ -75,12 +75,6 @@
    "The relative uri that serves as the logout endpoint."
    config/string-range))
 
-(def openid-backchannel-logout-uri
-  (config/setting
-   :backchannel-logout-uri
-   "The relative uri that serves as the backchannel logout endpoint."
-   config/string-range))
-
 (def openid-basic-auth?
   (config/setting
    :basic-auth?
@@ -101,7 +95,6 @@
                  openid-redirect-uri
                  openid-landing-uri
                  openid-logout-uri
-                 openid-backchannel-logout-uri
                  openid-basic-auth?))
 
 (def openid-sequence-schema
