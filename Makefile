@@ -3,7 +3,7 @@
 build:
 	clojure -T:active-openid/build jar
 
-deploy:
+deploy: build
 	clojure -T:active-openid/build deploy
 
 test:
