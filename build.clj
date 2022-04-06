@@ -11,16 +11,19 @@
 (defn clean [_]
   (b/delete {:path "target"}))
 
+(def git-scm-url (b/git-process {:git-args "config --get remote.origin.url"}))
+
 (defn jar [_]
   (b/write-pom {:class-dir class-dir
-                :lib lib
-                :version version
-                :basis basis
-                :src-dirs ["src"]})
-  (b/copy-dir {:src-dirs ["src" "resources"]
+                :lib       lib
+                :version   version
+                :basis     basis
+                :src-dirs  ["src"]
+                :scm       {:url git-scm-url}})
+  (b/copy-dir {:src-dirs   ["src" "resources"]
                :target-dir class-dir})
   (b/jar {:class-dir class-dir
-          :jar-file jar-file}))
+          :jar-file  jar-file}))
 
 (defn deploy [_]
   (dd/deploy {:installer :remote
