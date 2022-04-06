@@ -236,7 +236,9 @@
 ;; session part of the request-map is supposed to be structured.
 (s/def ::profile-name (s/or :string string? :key keyword?))
 (s/def ::token string?)
-(s/def ::token-map (s/keys :req-un [::token]))
+(s/def ::token_type string?)
+(s/def ::extra-dat (s/keys :opt-un [::token_type]))
+(s/def ::token-map (s/keys :req-un [::token ::extra-data]))
 (s/def ::access-tokens (s/map-of ::profile-name ::token-map))
 (s/def ::session (s/keys :req [::access-tokens]))
 (s/def ::request (s/keys :opt-un [::session]))
@@ -294,6 +296,16 @@
   [req openid-profile]
   (-> (req->access-tokens req)
       (get-in [(openid-profile-name openid-profile) :token])))
+
+(s/fdef req->access-token-type-for-profile
+  :args (s/cat :req ::request :openid-profile openid-profile?)
+  :ret (s/nilable ::token_type))
+(defn req->access-token-type-for-profile
+  "Returns the access token's type for `openid-profile` if there is
+  one."
+  [req openid-profile]
+  (-> (req->access-tokens req)
+      (get-in [(openid-profile-name openid-profile) :extra-data :token_type])))
 
 (s/fdef req->openid-profile
   :args (s/cat :req ::request :openid-profiles (s/coll-of openid-profile?))
