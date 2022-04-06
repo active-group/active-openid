@@ -41,19 +41,20 @@
    logout-uri             openid-profile-logout-uri
    basic-auth?            openid-profile-basic-auth?])
 
-(defn- prefixed
-  [openid-profile lens]
-  (str "/" (openid-profile-name openid-profile) (lens openid-profile)))
+(defn prefixed-uri
+  "Returns a `uri` prefixed with the name of the `openid-profile`."
+  [openid-profile uri]
+  (str "/" (openid-profile-name openid-profile) uri))
 
 (defn launch-uri
   "Returns the qualified launch-uri of an `openid-profile`."
   [openid-profile]
-  (prefixed openid-profile openid-profile-launch-uri))
+  (prefixed-uri openid-profile (openid-profile-launch-uri openid-profile)))
 
 (defn redirect-uri
   "Returns the qualified redirect-uri of an `openid-profile`."
   [openid-profile]
-  (prefixed openid-profile openid-profile-redirect-uri))
+  (prefixed-uri openid-profile (openid-profile-redirect-uri openid-profile)))
 
 (defn get-openid-configuration-url
   [scheme host port realm]
@@ -225,10 +226,10 @@
      (get-in request [:query-params "state"])))
 
 (def ^:private state-mismatch-response {:status 400, :headers {}, :body "State mismatch"})
-(def ^:private default-state-mismatch-handler (constantly state-mismatch-response))
+(def default-state-mismatch-handler (constantly state-mismatch-response))
 
 (def ^:private no-auth-code-response {:status 400, :headers {}, :body "No authorization code"})
-(def ^:private default-no-auth-code-handler (constantly no-auth-code-response))
+(def default-no-auth-code-handler (constantly no-auth-code-response))
 
 
 ;; Some specs just to make sure theres an understanding on how the
@@ -242,12 +243,12 @@
 
 (s/fdef make-redirect-handler
   :ret (s/fspec :args (s/cat :req ::request)))
-(defn- make-redirect-handler
-  ;; Creates a redirect (callback) handler for a `openid-profile`.  A
-  ;; successful login might result in an exceptional state (i.e. when
-  ;; the server cannot be reached after receiving the code.  Such
-  ;; errors will be returned as a ring-response with code 500 and the
-  ;; class and message as a Clojure-map.
+(defn make-redirect-handler
+  "Creates a redirect (callback) handler for a `openid-profile`.  A
+  successful login might result in an exceptional state (i.e. when
+  the server cannot be reached after receiving the code.  Such
+  errors will be returned as a ring-response with code 500 and the
+  class and message as a Clojure-map."
   [openid-profile no-auth-code-handler state-mismatch-handler]
   (fn [{:keys [session] :as request}]
     (cond
@@ -325,14 +326,11 @@
   "For a given [[OpenidProfile]], returns a vector containing the launch-
   and login-callback handlers."
   [openid-profile no-auth-code-handler state-mismatch-handler]
-  (let [profile-name (openid-profile-name openid-profile)
-        namespaced   (fn [uri]
-                     (string/join "/" [profile-name uri]))]
-    [[(launch-uri openid-profile)
-      {:get {:handler (make-launch-handler openid-profile)}}]
-      [(redirect-uri openid-profile)
-       {:get {:handler    (make-redirect-handler openid-profile no-auth-code-handler state-mismatch-handler)
-              :middleware [[wrap-params]]}}]]))
+  [[(launch-uri openid-profile)
+    {:get {:handler (make-launch-handler openid-profile)}}]
+   [(redirect-uri openid-profile)
+    {:get {:handler    (make-redirect-handler openid-profile no-auth-code-handler state-mismatch-handler)
+           :middleware [[wrap-params]]}}]])
 
 (defn reitit-routes
   "Based on a sequence of [[OpenidProfile]]s, returns a vector of two
