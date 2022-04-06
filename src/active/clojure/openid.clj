@@ -156,7 +156,7 @@
       (string/replace "+" "-")
       (string/replace "/" "_")))
 
-(defn- make-launch-handler
+(defn make-launch-handler
   [openid-profile]
   (fn [request]
     (let [state       (random-state)
