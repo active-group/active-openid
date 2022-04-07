@@ -237,7 +237,7 @@
 (s/def ::profile-name (s/or :string string? :key keyword?))
 (s/def ::token string?)
 (s/def ::token_type string?)
-(s/def ::extra-dat (s/keys :opt-un [::token_type]))
+(s/def ::extra-data (s/keys :opt-un [::token_type]))
 (s/def ::token-map (s/keys :req-un [::token ::extra-data]))
 (s/def ::access-tokens (s/map-of ::profile-name ::token-map))
 (s/def ::session (s/keys :req [::access-tokens]))
@@ -262,15 +262,13 @@
 
       :else
       (try 
-        (let [access-token (get-access-token openid-profile request)
-              resp (-> (response/redirect (openid-profile-landing-uri openid-profile))
-                       (assoc :session (-> session
-                                           (assoc-in [::access-tokens (openid-profile-name openid-profile)] access-token)
-                                           (dissoc ::authorize-state))))]
-          resp)
+        (let [access-token (get-access-token openid-profile request)]
+          (-> (response/redirect (openid-profile-landing-uri openid-profile))
+              (assoc :session (-> session
+                                  (assoc-in [::access-tokens (openid-profile-name openid-profile)] access-token)
+                                  (dissoc ::authorize-state)))))
         (catch Exception e
-          (-> (response/response {:exception (.getClass e)
-                                  :message   (.getMessage e)})
+          (-> (response/response {:message (.getMessage e)})
               (response/status 500)
               (response/header "Content-Type" "application/json")))))))
 
