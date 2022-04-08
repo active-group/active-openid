@@ -319,8 +319,14 @@
 
 (defn openid-logout
   "Function that performs a logout at the idp for the current user.
-  Clears the whole :session for the `openid-profile`."
-  [openid-profile]
+  Clears the whole :session for the `openid-profile`.
+
+  - `host+port` points to the host (and port) this
+  application (e.g. \"http://localhost:8000\" is running on.  Openid
+  needs an absolute url to redirect the browser after a successful
+  logout.
+  "
+  [host+port openid-profile]
   (let [end-session-endpoint
         (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
                                          openid-provider-config-end-session-endpoint))
@@ -328,7 +334,7 @@
     (-> (response/redirect
          (str end-session-endpoint
               "?"
-              (codec/form-encode {:post_logout_redirect_uri (str "http://localhost:1414"
+              (codec/form-encode {:post_logout_redirect_uri (str host+port
                                                                  (openid-profile-landing-uri openid-profile))})))
         destroy-user-session)))
 

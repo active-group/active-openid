@@ -117,7 +117,7 @@
       (concat (openid/reitit-routes openid-profiles)
               [["/" {:get {:handler (fn [_] (response/redirect "/login"))}}]
                ["/login"  {:get {:handler (app-handler openid-profiles)}}]
-               ["/logout" {:get {:handler (logout-handler openid-profiles)}}]])
+               ["/logout" {:get {:handler (logout-handler "http://localhost:1414" openid-profiles)}}]])
       {:data {:middleware [[ring-session/wrap-session (:session ring-config)]
                            [ring-cookies/wrap-cookies]]}}))))
 
