@@ -7,6 +7,7 @@
    :client        "client-id"
    :client-secret          "eF3qgv1A3NVeQ7Dr7hls2KqbhXhInyPF"
    :scopes                 ["email" "roles"]
+   :scopes                 ["email" "roles" "openid"]
    :launch-uri             "/auth/login"
    :redirect-uri           "/auth/login-callback"
    :landing-uri            "/login"
