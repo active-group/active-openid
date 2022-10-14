@@ -92,13 +92,16 @@
           (assoc :session session)))))
 
 (defn logout-handler
-  [openid-profiles]
+  [host+port openid-profiles]
   (fn [req]
     (let [openid-profile (openid/req->openid-profile req openid-profiles)
+          ;; TODO: this is the wrong token, we need the id-token-hint,
+          ;; not the access_token
+          id-token-hint (openid/req->access-token-for-profile req openid-profile)
           end-session-endpoint
           (lens/yank openid-profile (lens/>> openid/openid-profile-openid-provider-config
                                              openid/openid-provider-config-end-session-endpoint))]
-      (openid/openid-logout openid-profile))))
+      (openid/openid-logout host+port openid-profile id-token-hint))))
 
 (def not-found-handler
   (constantly
@@ -123,11 +126,22 @@
 
 (def server (atom nil))
 
+(def server-config {:host  "localhost"
+                    :port  1414
+                    :join? false})
+
+(defn sc-port [{:keys [port]}]
+  port)
+
+(defn sc-host [{:keys [host]}]
+  host)
+
+(defn server-config->host+port [sc]
+  (str "http://" (sc-host sc) ":" (sc-port sc)))
+
 (defn start-server
-    [config]
-    (reset! server (jetty/run-jetty (app config) {:host "0.0.0.0"
-                                                 :port 1414
-                                                 :join? false})))
+  [config]
+  (reset! server (jetty/run-jetty (app config) server-config)))
 
 (defn stop-server
     []

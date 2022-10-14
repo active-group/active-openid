@@ -58,7 +58,7 @@
 
 (defn get-openid-configuration-url
   [scheme host port realm]
-  (format "%s://%s:%d/auth/realms/%s/.well-known/openid-configuration" scheme host port realm))
+  (format "%s://%s:%d/realms/%s/.well-known/openid-configuration" scheme host port realm))
 
 (defn- openid-supports-backchannel-logout?
   ;; True if the `openid-profile` supports backchannel logouts as discovered
@@ -326,16 +326,17 @@
   needs an absolute url to redirect the browser after a successful
   logout.
   "
-  [host+port openid-profile]
+  [host+port openid-profile id-token-hint]
   (let [end-session-endpoint
         (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
-                                         openid-provider-config-end-session-endpoint))
+                                           openid-provider-config-end-session-endpoint))
         destroy-user-session (make-user-session-destroyer openid-profile)]
     (-> (response/redirect
          (str end-session-endpoint
               "?"
               (codec/form-encode {:post_logout_redirect_uri (str host+port
-                                                                 (openid-profile-landing-uri openid-profile))})))
+                                                                 (openid-profile-landing-uri openid-profile))
+                                  :id_token_hint            id-token-hint})))
         destroy-user-session)))
 
 (defn reitit-routes-for-profile
