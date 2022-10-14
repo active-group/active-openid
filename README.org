@@ -88,7 +88,7 @@ environment variables
 Some of the todos for this project.
 - [X] Browser based authentication
 - [ ] [[https://openid.net/specs/openid-connect-backchannel-1_0.html][Backchannel logout]]
-- [ ] =check_session_iframe=.  Included in in discovered endpoints and
+- [ ] =check_session_iframe=.  Included in discovered endpoints and
   therefore usable.  In the future, some direct support (maybe a
   [[https://github.com/active-group/reacl-c][reacl-c]]-item would be nice?).
 
