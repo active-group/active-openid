@@ -95,6 +95,35 @@
          (catch Exception e
            (make-openid-instance-not-available configuration-url (.getMessage e))))))
 
+(defn make-openid-profile!
+  "See make-openid-profiles!"
+  [openid-config]
+  (let [scheme (active-config/access openid-config openid-config/openid-scheme)
+        host   (active-config/access openid-config openid-config/openid-host)
+        port   (active-config/access openid-config openid-config/openid-port)
+        realm  (active-config/access openid-config openid-config/openid-realm)
+        client (active-config/access openid-config openid-config/openid-client)
+        ;; This might fail Also, this might be a bad idea:
+        ;; TODO If the identity provider is unavailable at
+        ;; startup, there is no recovery.
+        openid-provider-config-or-error
+        (get-openid-provider-config! scheme host port realm)]
+    (cond
+      (openid-provider-config? openid-provider-config-or-error)
+      (make-openid-profile (active-config/access openid-config openid-config/openid-name)
+                           openid-provider-config-or-error
+                           (active-config/access openid-config openid-config/openid-client)
+                           (active-config/access openid-config openid-config/openid-client-secret)
+                           (active-config/access openid-config openid-config/openid-scopes)
+                           (active-config/access openid-config openid-config/openid-launch-uri)
+                           (active-config/access openid-config openid-config/openid-redirect-uri)
+                           (active-config/access openid-config openid-config/openid-landing-uri)
+                           (active-config/access openid-config openid-config/openid-logout-uri)
+                           (active-config/access openid-config openid-config/openid-basic-auth?))
+
+      (openid-instance-not-available? openid-provider-config-or-error)
+      openid-provider-config-or-error)))
+
 (defn make-openid-profiles!
   "Takes a [[active.clojure.config/Configuration]] and extracts all
   configured [[OpenidProfile]]s from the config.
@@ -104,34 +133,7 @@
   an [[OpenidProfile]] for that instance.."
   [config]
   (let [openid-profiles-config (active-config/section-subconfig config openid-config/section)]
-    (mapv (fn [c]
-            (let [scheme (active-config/access c openid-config/openid-scheme)
-                  host   (active-config/access c openid-config/openid-host)
-                  port   (active-config/access c openid-config/openid-port)
-                  realm  (active-config/access c openid-config/openid-realm)
-                  client (active-config/access c openid-config/openid-client)
-
-                  ;; This might fail Also, this might be a bad idea:
-                  ;; TODO If the identity provider is unavailable at
-                  ;; startup, there is no recovery.
-                  openid-provider-config-or-error
-                  (get-openid-provider-config! scheme host port realm)]
-              (cond
-                (openid-provider-config? openid-provider-config-or-error)
-                (make-openid-profile (active-config/access c openid-config/openid-name)
-                                   openid-provider-config-or-error
-                                   (active-config/access c openid-config/openid-client)
-                                   (active-config/access c openid-config/openid-client-secret)
-                                   (active-config/access c openid-config/openid-scopes)
-                                   (active-config/access c openid-config/openid-launch-uri)
-                                   (active-config/access c openid-config/openid-redirect-uri)
-                                   (active-config/access c openid-config/openid-landing-uri)
-                                   (active-config/access c openid-config/openid-logout-uri)
-                                   (active-config/access c openid-config/openid-basic-auth?))
-
-                (openid-instance-not-available? openid-provider-config-or-error)
-                openid-provider-config-or-error)))
-          openid-profiles-config)))
+    (mapv make-openid-profile! openid-profiles-config)))
 
 (defn- join-scopes
   ;; Returns a string containing all configured
