@@ -150,7 +150,8 @@
          (codec/form-encode {:response_type "code"
                              :client_id     (openid-profile-client-id openid-profile)
                              :redirect_uri  (redirect-uri openid-profile)
-                             :state         state}))))
+                             :state         state
+                             :scope         (join-scopes openid-profile)}))))
 
 (defn- random-state
   []
@@ -373,7 +374,7 @@
 
   1. A valid login: The login was successful.  The callback handler
   will use the code provided by the idp and fetches an access token (a
-  JWT token).  The token will be assed to the session under
+  JWT token).  The token will be passed to the session under
   `[::access-tokens <openid-profile-name> <access-token>]`.
 
   2. The idp didn't provide an authorization code.  The callback

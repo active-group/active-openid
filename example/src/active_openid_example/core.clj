@@ -1,9 +1,7 @@
-
 (ns active-openid-example.core
   (:require [active.clojure.config :as active-config]
             [active.clojure.lens :as lens]
             [active.clojure.logger.event :as log]
-            [active.clojure.logger.log4j :as log4j]
             [active.clojure.openid :as openid]
             [active.clojure.openid.config :as openid-config]
             [active.clojure.record :refer [define-record-type]]
@@ -159,7 +157,6 @@
                     (active-config/make-configuration (active-config/schema "The schema"
                                                                             openid-config/section)
                                                       []))]
-    (log4j/redirect-log4j!)
     (log/set-global-log-events-config-from-map! {:min-level :info})
     (start-server config)))
 
