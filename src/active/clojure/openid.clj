@@ -1,7 +1,5 @@
 (ns active.clojure.openid
-  (:require [active.clojure.condition :as condition]
-            [active.clojure.config :as active-config]
-            [active.clojure.config :as config]
+  (:require [active.clojure.config :as active-config]
             [active.clojure.lens :as lens]
             [active.clojure.openid :as openid]
             [active.clojure.openid.config :as openid-config]
@@ -12,7 +10,6 @@
             [clojure.data.json :as json]
             [clojure.string :as string]
             [crypto.random :as random]
-            [ring.middleware.cookies :as ring-cookies]
             [ring.middleware.params :refer [wrap-params]]
             [ring.util.codec :as codec]
             [ring.util.response :as response])
@@ -65,7 +62,7 @@
   ;; on the .well-known page.
   [openid-profile]
   (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
-                                   openid-provider-config-supports-backchannel-logout?)))
+                                     openid-provider-config-supports-backchannel-logout?)))
 
 (define-record-type OpenidInstanceNotAvailable
   make-openid-instance-not-available openid-instance-not-available?
@@ -144,7 +141,7 @@
 (defn- authorize-uri
   [openid-profile state]
   (let [authorize-uri (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
-                                                       openid-provider-config-authorize-endpoint))]
+                                                         openid-provider-config-authorize-endpoint))]
     (str authorize-uri
          (if (string/includes? authorize-uri "?") "&" "?")
          (codec/form-encode {:response_type "code"
@@ -210,7 +207,7 @@
   Might throw an exception."
   [openid-profile request]
   (let [access-token-uri (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
-                                                          openid-provider-config-token-endpoint))
+                                                            openid-provider-config-token-endpoint))
         client-id        (openid-profile-client-id openid-profile)
         client-secret    (openid-profile-client-secret openid-profile)
         basic-auth?      (openid-profile-basic-auth? openid-profile)]
@@ -233,7 +230,6 @@
 
 (def ^:private no-auth-code-response {:status 400, :headers {}, :body "No authorization code"})
 (def default-no-auth-code-handler (constantly no-auth-code-response))
-
 
 ;; Some specs just to make sure theres an understanding on how the
 ;; session part of the request-map is supposed to be structured.
@@ -264,7 +260,7 @@
       (no-auth-code-handler request)
 
       :else
-      (try 
+      (try
         (let [access-token (get-access-token openid-profile request)]
           (-> (response/redirect (openid-profile-landing-uri openid-profile))
               (assoc :session (-> session
@@ -383,9 +379,9 @@
   3. The state code's did not match.  The callback handle rreturns
   the [[state-mismatch-response]]."
   [openid-profiles & [{:keys [no-auth-code-handler
-                            state-mismatch-handler]
-                     :or   {no-auth-code-handler   default-no-auth-code-handler
-                            state-mismatch-handler default-state-mismatch-handler}}]]
+                              state-mismatch-handler]
+                       :or   {no-auth-code-handler   default-no-auth-code-handler
+                              state-mismatch-handler default-state-mismatch-handler}}]]
   (into [] (mapcat (fn [openid-profile]
                      (reitit-routes-for-profile openid-profile no-auth-code-handler state-mismatch-handler))
                    openid-profiles)))
