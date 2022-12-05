@@ -1,13 +1,11 @@
 {:openid
- [{:name                   "keycloak"
-   :host                   "localhost"
-   :port                   8080
-   :scheme                 "http"
-   :realm         "realm-name"
-   :client        "client-id"
-   :client-secret          "QMq8EYo11xLtAeYVPwD3uKjjuxOMrb0c"
-   :scopes                 ["email" "roles" "openid"]
-   :launch-uri             "/auth/login"
-   :redirect-uri           "/auth/login-callback"
-   :landing-uri            "/login"
-   :logout-uri             "/auth/logout"}]}
+ [{:provider      {:name       "keycloak"
+                   :uri-prefix "keycloak" ;; NOTE nil or not present if no prefix should be added
+                   :config-uri "http://localhost:8080/realms/realm-name/.well-known/openid-configuration"}
+   :client        {:id     "client-id"
+                   :secret "jJYUX8LzCdjpil1Kop4tSYexGtZDndUV"
+                   :scopes ["openid"]}
+   :callback-uris {:launch-uri   "/auth/login"
+                   :redirect-uri "/auth/login-callback"
+                   :landing-uri  "/login"
+                   :logout-uri   "/auth/logout"}}]}

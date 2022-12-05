@@ -28,7 +28,8 @@
   OpenidProfile
   make-openid-profile openid-profile?
   [name                   openid-profile-name
-   openid-provider-config openid-profile-openid-provider-config
+   uri-prefix             openid-profile-uri-prefix
+   provider-config        openid-profile-openid-provider-config
    client-id              openid-profile-client-id
    client-secret          openid-profile-client-secret
    scopes                 openid-profile-scopes
@@ -41,7 +42,9 @@
 (defn prefixed-uri
   "Returns a `uri` prefixed with the name of the `openid-profile`."
   [openid-profile uri]
-  (str "/" (openid-profile-name openid-profile) uri))
+  (if (empty? (openid-profile-uri-prefix openid-profile))
+    uri
+    (str "/" (openid-profile-uri-prefix openid-profile) uri)))
 
 (defn launch-uri
   "Returns the qualified launch-uri of an `openid-profile`."
@@ -52,10 +55,6 @@
   "Returns the qualified redirect-uri of an `openid-profile`."
   [openid-profile]
   (prefixed-uri openid-profile (openid-profile-redirect-uri openid-profile)))
-
-(defn get-openid-configuration-url
-  [scheme host port realm]
-  (format "%s://%s:%d/realms/%s/.well-known/openid-configuration" scheme host port realm))
 
 (defn- openid-supports-backchannel-logout?
   ;; True if the `openid-profile` supports backchannel logouts as discovered
@@ -77,49 +76,45 @@
 
   ;; If the openid instance is not available, returns
   ;; an [[%openid-instance-not-available]]] condition.
-  [scheme host port realm]
-  (let [configuration-url (get-openid-configuration-url scheme host port realm)]
-    (try (let [{:keys [status body]} (http-client/get configuration-url)]
-           (case status
-             200 (let [json-map (json/read-str body)]
-                   (make-openid-provider-config (get json-map "authorization_endpoint")
-                                                (get json-map "token_endpoint")
-                                                (get json-map "userinfo_endpoint")
-                                                (get json-map "end_session_endpoint")
-                                                (get json-map "check_session_iframe")
-                                                (get json-map "backchannel_logout_supported")))
-             "error"))
-         (catch Exception e
-           (make-openid-instance-not-available configuration-url (.getMessage e))))))
+  [provider-config-uri]
+  (try (let [{:keys [status body]} (http-client/get provider-config-uri)]
+         (case status
+           200 (let [json-map (json/read-str body)]
+                 (make-openid-provider-config (get json-map "authorization_endpoint")
+                                              (get json-map "token_endpoint")
+                                              (get json-map "userinfo_endpoint")
+                                              (get json-map "end_session_endpoint")
+                                              (get json-map "check_session_iframe")
+                                              (get json-map "backchannel_logout_supported")))
+           "error"))
+       (catch Exception e
+         (make-openid-instance-not-available provider-config-uri (.getMessage e)))))
 
 (defn make-openid-profile!
   "See make-openid-profiles!"
   [openid-config]
-  (let [scheme (active-config/access openid-config openid-config/openid-scheme)
-        host   (active-config/access openid-config openid-config/openid-host)
-        port   (active-config/access openid-config openid-config/openid-port)
-        realm  (active-config/access openid-config openid-config/openid-realm)
-        client (active-config/access openid-config openid-config/openid-client)
+  (let [provider-config-uri (active-config/access openid-config openid-config/openid-provider-config-uri openid-config/openid-provider-section)
         ;; This might fail Also, this might be a bad idea:
         ;; TODO If the identity provider is unavailable at
         ;; startup, there is no recovery.
-        openid-provider-config-or-error
-        (get-openid-provider-config! scheme host port realm)]
+        provider-config-or-error
+        (get-openid-provider-config! provider-config-uri)]
     (cond
-      (openid-provider-config? openid-provider-config-or-error)
-      (make-openid-profile (active-config/access openid-config openid-config/openid-name)
-                           openid-provider-config-or-error
-                           (active-config/access openid-config openid-config/openid-client)
-                           (active-config/access openid-config openid-config/openid-client-secret)
-                           (active-config/access openid-config openid-config/openid-scopes)
-                           (active-config/access openid-config openid-config/openid-launch-uri)
-                           (active-config/access openid-config openid-config/openid-redirect-uri)
-                           (active-config/access openid-config openid-config/openid-landing-uri)
-                           (active-config/access openid-config openid-config/openid-logout-uri)
-                           (active-config/access openid-config openid-config/openid-basic-auth?))
+      (openid-provider-config? provider-config-or-error)
+      (make-openid-profile (active-config/access openid-config openid-config/openid-provider-name openid-config/openid-provider-section)
+                           (active-config/access openid-config openid-config/openid-provider-uri-prefix openid-config/openid-provider-section)
+                           provider-config-or-error
+                           (active-config/access openid-config openid-config/openid-client-id openid-config/openid-client-section)
+                           (active-config/access openid-config openid-config/openid-client-secret openid-config/openid-client-section)
+                           (active-config/access openid-config openid-config/openid-client-scopes openid-config/openid-client-section)
+                           (active-config/access openid-config openid-config/openid-callback-uris-launch-uri openid-config/openid-callback-uris-section)
+                           (active-config/access openid-config openid-config/openid-callback-uris-redirect-uri openid-config/openid-callback-uris-section)
+                           (active-config/access openid-config openid-config/openid-callback-uris-landing-uri openid-config/openid-callback-uris-section)
+                           (active-config/access openid-config openid-config/openid-callback-uris-logout-uri openid-config/openid-callback-uris-section)
+                           (active-config/access openid-config openid-config/openid-client-basic-auth? openid-config/openid-client-section))
 
-      (openid-instance-not-available? openid-provider-config-or-error)
-      openid-provider-config-or-error)))
+      (openid-instance-not-available? provider-config-or-error)
+      provider-config-or-error)))
 
 (defn make-openid-profiles!
   "Takes a [[active.clojure.config/Configuration]] and extracts all
