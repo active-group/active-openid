@@ -8,18 +8,17 @@
 
 (def config-map
   {:openid
-   [{:name          "keycloak"
-     :host          "localhost"
-     :port          8080
-     :scheme        "http"
-     :realm         "active-group"
-     :client        "openid-test"
-     :client-secret "<redacted>"
-     :scopes        ["username" "email"]
-     :launch-uri    "/auth/login"
-     :redirect-uri  "/auth/login-callback"
-     :logout-uri    "/auth/logout"
-     :basic-auth?   true}]})
+   [{:provider      {:name       "profile-name"
+                     :uri-prefix "profile-prefix"
+                     :config-uri "http://localhost:8080/realms/active-group/.well-known/openid-configuration"}
+     :client        {:id          "openid-test"
+                     :secret      "<redacted>"
+                     :scopes      ["openid" "username" "email"]
+                     :basic-auth? true}
+     :callback-uris {:launch-uri   "/auth/login"
+                     :redirect-uri "/auth/login-callback"
+                     :landing-uri  "/login"
+                     :logout-uri   "/auth/logout"}}]})
 
 (def config (active-config/make-configuration (active-config/schema "Test configuration schema"
                                                                     openid-config/section)
@@ -27,7 +26,8 @@
                                               config-map))
 
 (def openid-profiles
-  [(openid/make-openid-profile "profile"
+  [(openid/make-openid-profile "profile-name"
+                               "profile-prefix"
                                (openid/make-openid-provider-config
                                 "host:port/auth"
                                 "host:port/token"
@@ -45,18 +45,18 @@
                                false)])
 
 (t/deftest launch-uri-test
-  (t/is (= "/profile/login" (openid/launch-uri (first openid-profiles)))))
+  (t/is (= "/profile-prefix/login" (openid/launch-uri (first openid-profiles)))))
 
 (t/deftest redirect-uri-test
-  (t/is (= "/profile/login-callback" (openid/redirect-uri (first openid-profiles)))))
+  (t/is (= "/profile-prefix/login-callback" (openid/redirect-uri (first openid-profiles)))))
 
 (t/deftest req->access-tokens-test
   (t/testing "with no access tokens, returns nil"
     (t/is (nil? (openid/req->access-tokens {}))))
   (t/testing "returns all access tokens"
-    (t/is (= {"profile" {:token "some-token"}
+    (t/is (= {"profile-name" {:token "some-token"}
               "other"   {:token "some-other-token"}}
-             (openid/req->access-tokens {:session {::openid/access-tokens {"profile" {:token "some-token"}
+             (openid/req->access-tokens {:session {::openid/access-tokens {"profile-name" {:token "some-token"}
                                                                            "other"   {:token "some-other-token"}}}})))))
 
 (t/deftest req->access-token-for-openid-profile-test
@@ -65,7 +65,7 @@
   (t/testing "with no access tokens, returns nil"
     (t/is (= "token"
              (openid/req->access-token-for-profile
-              {:session {::openid/access-tokens {"profile" {:token "token"}}}}
+              {:session {::openid/access-tokens {"profile-name" {:token "token"}}}}
               (first openid-profiles))))))
 
 (t/deftest req->openid-profile
@@ -73,5 +73,5 @@
     (t/is (nil? (openid/req->openid-profile {} openid-profiles))))
   (t/testing "returns the openid-profile"
     (t/is (= (first openid-profiles)
-             (openid/req->openid-profile {:session {::openid/access-tokens {"profile" {:token "some-token"}}}}
+             (openid/req->openid-profile {:session {::openid/access-tokens {"profile-name" {:token "some-token"}}}}
                                          openid-profiles)))))
