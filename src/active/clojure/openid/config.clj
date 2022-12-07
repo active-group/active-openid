@@ -54,11 +54,18 @@
    "???"
    (config/boolean-range false)))
 
+(def openid-client-base-uri
+  (config/setting
+   :base-uri
+   "The base (root) uri of the application using active-openid."
+   config/string-range))
+
 (def openid-client-schema
   (config/schema "The openid client schema."
                  openid-client-id
                  openid-client-secret
                  openid-client-scopes
+                 openid-client-base-uri
                  openid-client-basic-auth?))
 
 (def openid-client-section

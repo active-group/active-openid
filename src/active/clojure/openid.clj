@@ -33,6 +33,7 @@
    client-id              openid-profile-client-id
    client-secret          openid-profile-client-secret
    scopes                 openid-profile-scopes
+   base-uri               openid-profile-base-uri
    launch-uri             openid-profile-launch-uri
    redirect-uri           openid-profile-redirect-uri
    landing-uri            openid-profile-landing-uri
@@ -55,6 +56,12 @@
   "Returns the qualified redirect-uri of an `openid-profile`."
   [openid-profile]
   (prefixed-uri openid-profile (openid-profile-redirect-uri openid-profile)))
+
+(defn absolute-redirect-uri
+  "Returns the qualified redirect-uri of an `openid-profile`."
+  [openid-profile]
+  (str (openid-profile-base-uri openid-profile)
+       (redirect-uri openid-profile)))
 
 (defn- openid-supports-backchannel-logout?
   ;; True if the `openid-profile` supports backchannel logouts as discovered
@@ -107,6 +114,7 @@
                            (active-config/access openid-config openid-config/openid-client-id openid-config/openid-client-section)
                            (active-config/access openid-config openid-config/openid-client-secret openid-config/openid-client-section)
                            (active-config/access openid-config openid-config/openid-client-scopes openid-config/openid-client-section)
+                           (active-config/access openid-config openid-config/openid-client-base-uri openid-config/openid-client-section)
                            (active-config/access openid-config openid-config/openid-callback-uris-launch-uri openid-config/openid-callback-uris-section)
                            (active-config/access openid-config openid-config/openid-callback-uris-redirect-uri openid-config/openid-callback-uris-section)
                            (active-config/access openid-config openid-config/openid-callback-uris-landing-uri openid-config/openid-callback-uris-section)
@@ -141,7 +149,7 @@
          (if (string/includes? authorize-uri "?") "&" "?")
          (codec/form-encode {:response_type "code"
                              :client_id     (openid-profile-client-id openid-profile)
-                             :redirect_uri  (redirect-uri openid-profile)
+                             :redirect_uri  (absolute-redirect-uri openid-profile)
                              :state         state
                              :scope         (join-scopes openid-profile)}))))
 
@@ -183,7 +191,7 @@
   [openid-profile request]
   {:grant_type   "authorization_code"
    :code         (get-authorization-code request)
-   :redirect_uri (redirect-uri openid-profile)})
+   :redirect_uri (absolute-redirect-uri openid-profile)})
 
 (defn- add-header-credentials
   [options client-id client-secret]
@@ -195,7 +203,7 @@
                                   (merge {:client_id     client-id
                                           :client_secret client-secret}))))
 
-(defn- get-access-token
+(defn- post-access-token!
   "For a `openid-profile` and based on a `request` (the response of the
   idp), fetch the actual (JWT) access token.
 
@@ -256,7 +264,7 @@
 
       :else
       (try
-        (let [access-token (get-access-token openid-profile request)]
+        (let [access-token (post-access-token! openid-profile request)]
           (-> (response/redirect (openid-profile-landing-uri openid-profile))
               (assoc :session (-> session
                                   (assoc-in [::access-tokens (openid-profile-name openid-profile)] access-token)
