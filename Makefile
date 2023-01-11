@@ -8,3 +8,6 @@ deploy: build
 
 test:
 	clojure -X:active-openid/test
+
+install: build
+	clojure -T:active-openid/build install

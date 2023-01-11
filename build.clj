@@ -1,6 +1,7 @@
 (ns build
-  (:require [clojure.tools.build.api :as b]
-            [deps-deploy.deps-deploy :as dd]))
+  (:require [clojure.tools.build.api    :as b]
+            [clojure.tools.deps.cli.api :as cli]
+            [deps-deploy.deps-deploy    :as dd]))
 
 (def lib 'de.active-group/active-openid)
 (def version (format "0.1.%s" (b/git-count-revs nil)))
@@ -30,3 +31,6 @@
               :artifact  jar-file
               :pom-file  (b/pom-path {:lib       lib
                                       :class-dir class-dir})}))
+
+(defn install [_]
+  (cli/mvn-install {:jar jar-file}))
