@@ -84,6 +84,10 @@ environment variables
   #+begin_src 
     CLOJARS_USERNAME=<username> CLOJARS_PASSWORD=<cli-token> make deploy
   #+end_src
+* License
+Copyright © 2022-2023 Active Group GmbH
+
+Distributed under the Eclipse Public License either version 2.0 or (at your option) any later version. [[file:LICENSE.org][(see LICENSE)]]
 * TODO [1/3]
 Some of the todos for this project.
 - [X] Browser based authentication
