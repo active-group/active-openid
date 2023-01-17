@@ -103,7 +103,6 @@
           end-session-endpoint (lens/yank openid-profile
                                           (lens/>> openid/openid-profile-openid-provider-config
                                                    openid/openid-provider-config-end-session-endpoint))]
-      ;; FIXME: Invalid redirect uri
       (openid/openid-logout host+port openid-profile id-token))))
 
 (def not-found-handler
