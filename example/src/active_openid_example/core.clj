@@ -113,7 +113,7 @@
 (defn app
   [config]
   (let [openid-profiles (openid/make-openid-profiles! config)]
-    (rr/ring-handler 
+    (rr/ring-handler
      (rr/router
       (concat (openid/reitit-routes openid-profiles)
               [["/" {:get {:handler (fn [_] (response/redirect "/login"))}}]
