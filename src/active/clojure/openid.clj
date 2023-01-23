@@ -132,7 +132,7 @@
   an [[%openid-instance-not-available]]] condition instead of
   an [[OpenidProfile]] for that instance.."
   [openid-profiles-config]
-  (mapv make-openid-profile! (mapv #(active-config/make-configuration openid-config/openid-schema [] %) (active-config/configuration openid-profiles-config))))
+  (mapv make-openid-profile! (mapv #(active-config/make-configuration openid-config/openid-schema [] %) (active-config/configuration-object openid-profiles-config))))
 
 (defn- join-scopes
   ;; Returns a string containing all configured
