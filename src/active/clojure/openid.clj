@@ -131,9 +131,8 @@
   If any openid instance is not available, returns
   an [[%openid-instance-not-available]]] condition instead of
   an [[OpenidProfile]] for that instance.."
-  [config]
-  (let [openid-profiles-config (active-config/section-subconfig config openid-config/section)]
-    (mapv make-openid-profile! openid-profiles-config)))
+  [openid-profiles-config]
+  (mapv make-openid-profile! (mapv #(active-config/make-configuration openid-config/openid-schema [] %) (active-config/configuration openid-profiles-config))))
 
 (defn- join-scopes
   ;; Returns a string containing all configured

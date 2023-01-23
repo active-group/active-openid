@@ -116,7 +116,8 @@
 
 (defn app
   [config]
-  (let [openid-profiles (openid/make-openid-profiles! config)]
+  ;; FIXME: if a OIDP is not available, it is not an openid-profile? -- what if it becomes available later or the other way round?
+  (let [openid-profiles (filter openid/openid-profile? (openid/make-openid-profiles! config))]
     (rr/ring-handler
      (rr/router
       (concat (openid/reitit-routes openid-profiles)
@@ -158,8 +159,7 @@
   []
   (let [config (->> (slurp "./etc/config.edn")
                     edn/read-string
-                    (active-config/make-configuration (active-config/schema "The schema"
-                                                                            openid-config/section)
+                    (active-config/make-configuration openid-config/openid-sequence-schema
                                                       []))]
     (log/set-global-log-events-config-from-map! {:min-level :info})
     (start-server config)))

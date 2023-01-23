@@ -116,5 +116,4 @@
    "A sequence of openid identity provider configurations."
    openid-schema))
 
-(def section
-  (config/section :openid openid-sequence-schema))
+(def section-schema openid-sequence-schema)
