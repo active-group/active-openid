@@ -164,4 +164,6 @@
     (log/set-global-log-events-config-from-map! {:min-level :info})
     (start-server config)))
 
-(run)
+(def running-server (run))
+
+; (.stop running-server)
