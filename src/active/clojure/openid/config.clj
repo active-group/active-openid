@@ -105,15 +105,23 @@
 (def openid-callback-uris-section
   (config/section :callback-uris openid-callback-uris-schema))
 
-(def openid-schema
+(def openid-profile-schema
   (config/schema "Configuration schema for the openid connect configuration."
                  openid-provider-section
                  openid-client-section
                  openid-callback-uris-section))
 
-(def openid-sequence-schema
+(def openid-profiles-schema
   (config/sequence-schema
    "A sequence of openid identity provider configurations."
-   openid-schema))
+   openid-profile-schema))
 
-(def section-schema openid-sequence-schema)
+(def openid-profiles-section
+  (config/section
+    :openid-profiles
+    openid-profiles-schema))
+
+(def openid-schema
+  (config/schema
+    "Configuration schema for active-openid."
+    openid-profiles-section))

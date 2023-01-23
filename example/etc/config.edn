@@ -1,4 +1,5 @@
-[{:provider      {:name       "keycloak"
+{:openid-profiles
+ [{:provider      {:name       "keycloak"
                   :uri-prefix "keycloak" ;; NOTE nil or not present if no prefix should be added
                   :config-uri "http://localhost:8080/realms/realm-name/.well-known/openid-configuration"}
   :client        {:id     "client-id"
@@ -7,4 +8,4 @@
   :callback-uris {:launch-uri   "/auth/login"
                   :redirect-uri "/auth/login-callback"
                   :landing-uri  "/login"
-                  :logout-uri   "/auth/logout"}}]
+                  :logout-uri   "/auth/logout"}}]}

@@ -6,24 +6,6 @@
             [clojure.string :as string]
             [ring.util.codec :as codec]))
 
-(def config-seq
-  [{:provider      {:name       "profile-name"
-                    :uri-prefix "profile-prefix"
-                    :config-uri "http://localhost:8080/realms/active-group/.well-known/openid-configuration"}
-    :client        {:id          "openid-test"
-                    :secret      "<redacted>"
-                    :scopes      ["openid" "username" "email"]
-                    :basic-auth? true
-                    :base-uri    "http://localhost:8888"}
-    :callback-uris {:launch-uri   "/auth/login"
-                    :redirect-uri "/auth/login-callback"
-                    :landing-uri  "/login"
-                    :logout-uri   "/auth/logout"}}])
-
-(def config (active-config/make-configuration openid-config/openid-sequence-schema
-                                              []
-                                              config-seq))
-
 (def openid-profiles
   [(openid/make-openid-profile "profile-name"
                                "profile-prefix"

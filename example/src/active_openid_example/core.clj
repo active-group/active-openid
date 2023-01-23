@@ -159,7 +159,7 @@
   []
   (let [config (->> (slurp "./etc/config.edn")
                     edn/read-string
-                    (active-config/make-configuration openid-config/openid-sequence-schema
+                    (active-config/make-configuration openid-config/openid-schema
                                                       []))]
     (log/set-global-log-events-config-from-map! {:min-level :info})
     (start-server config)))
