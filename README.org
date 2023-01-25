@@ -20,42 +20,23 @@ Include the following in your project's =deps.edn= file (or
 ** ... via =active.clojure.config=
 =active-openid= provides a configuration section for projects using
 =active.clojure.config= from [[https://github.com/active-group/active-clojure#configuration][=active-clojure=]].  Below is the
-configuration schema.
-   
-| Key              | desription                                                                  | range                      | comment                                                         |
-|------------------+-----------------------------------------------------------------------------+----------------------------+-----------------------------------------------------------------|
-| =:name=          | The name of the profile.                                                    | =string-range=             | Identifies the profile, also used to construct required routes. |
-| =:host=          | The host of this profile's openid instance.                                 | =string-range=             |                                                                 |
-| =:port=          | This port the openid service is listening on                                | =integer-between-range=    |                                                                 |
-| =:realm=         | The keycloak realm this project is a client on.                             | =string-range=             |                                                                 |
-| =:client=        | The client this project is identifying itself as to the openid provider.    | =string-range=             |                                                                 |
-| =:client-secret= | The secret this client knows from the openid provider.                      | =string-range=             |                                                                 |
-| =:scopes=        | Scopes this project wants to access from the openid provider.               | =sequence of string-range= |                                                                 |
-| =:launch-uri=    | Uri on your side that initiates the login process.                          | =string-range=             | Relative                                                        |
-| =:redirect-uri=  | Callback uri for authentication process on your side.                       | =string-range=             | Relative                                                        |
-| =:landing-uri=   | Default page the user-agent will be redirected to from the openid provider. | =string-range=             | Relative                                                        |
-| =:logout-uri=    | Uri on your side that initiates the logout process.                         | =string-range=             | Relative                                                        |
-
-A sequence schema is provided and expected to be under the =openid=
-key.  [[./example/etc/config.edn][An example configuration file can be found here]].
+configuration schema. [[./example/etc/config.edn][An example configuration file can be found here]].
 
 #+begin_src clojure
 #+end_src
-Include this configuration as a =section= in you code like this
+Include the schema =openid-schema= via a =section= in your code like this
 
 #+begin_src clojure
   (ns your.ns
     (:require [active.clojure.config :as active-config]
               [active.clojure.openid.config :as openid-config]))
 
-  (def schema
-    (active-config/schema "Configuration schema for my.ns"
-                          ...  ; the rest of your config
-                          openid-config/section))
+  (def openid-section
+    (config/section
+      :openid
+      openid-config/openid-schema))
 #+end_src
 
-A =schema= is also provided in
-=active.clojure.openid.config/keyclaok-sequence-schema=.
 * Usage
 See [[./example]].
 * Development
@@ -95,5 +76,3 @@ Some of the todos for this project.
 - [ ] =check_session_iframe=.  Included in discovered endpoints and
   therefore usable.  In the future, some direct support (maybe a
   [[https://github.com/active-group/reacl-c][reacl-c]]-item would be nice?).
-
-
