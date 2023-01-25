@@ -1,0 +1,16 @@
+version: '3.7'
+
+services:
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:20.0.3
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KEYCLOAK_IMPORT=/tmp/realm-export.json
+    volumes:
+      - ./docker-keycloak/import:/opt/keycloak/data/import
+      - ./docker-keycloak/export:/tmp/export
+    command: start-dev --import-realm
+    ports:
+      - 8080:8080
