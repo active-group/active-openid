@@ -515,7 +515,7 @@
                             (authorized-state user-info-map)))))))))
 
           (authorized-state? request)
-          ;; FIXME: consider validity here, maybe refresh token
+          ;; FIXME: consider validity here, maybe refresh token https://auth0.com/docs/authenticate/login/oidc-conformant-authentication/oidc-adoption-refresh-tokens
           (do
             (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: already authorized, handling request" request))
             (handler request)))
