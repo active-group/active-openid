@@ -15,9 +15,7 @@
             [hiccup.page :as hp]
             [ring.util.codec :as codec]
             [ring.util.response :as response]
-            [ring.middleware.cookies :as ring-cookies]
             [ring.middleware.defaults :as ring-defaults]
-            [ring.middleware.params :as ring-params]
             [ring.middleware.session :as ring-session]
             [ring.middleware.session.memory :as ring-session-memory]))
 
@@ -231,9 +229,19 @@
     (Integer/parseInt n)
     n))
 
+(defn parse-params
+  [request]
+  (if-let [query-string (:query-string request)]
+    (codec/form-decode query-string)
+    {}))
+
 (defn get-authorization-code
   [request]
-  (get-in request [:query-params "code"]))
+  (get (parse-params request) "code"))
+
+(defn get-session-state
+  [request]
+  (get (parse-params request) "state"))
 
 (defn add-header-credentials
   [options client-id client-secret]
@@ -385,7 +393,7 @@
            (nil? (authorization-started-state request)))
       (and (nil? (authorized-state request))
            (and (some? (authorization-started-state request))
-                (nil? (get-in request [:query-params "state"]))))))
+                (nil? (get-session-state request))))))
 
 (defn authorization-started-state?
   [request]
@@ -484,7 +492,7 @@
 
             ;; this is the request that comes from the IDP
           (authorization-started-state? request)
-          (let [state-from-idp (get-in request [:query-params "state"])
+          (let [state-from-idp (get-session-state request)
                 _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authorization started, got state from IDP" state-from-idp))
                 state-profile-map (authorization-started-state request)
                 _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authorization started, found state-profile-map" state-profile-map))
@@ -523,22 +531,25 @@
           (log/log-exception-event! :error (log/log-msg "wrap-ensure-authenticated: caught exception" (.getMessage e) request) e)
           (error-handler request (.getMessage e) e))))))
 
+(defn wrap-openid-session
+  [handler]
+  (let [session-store  (ring-session-memory/memory-store)
+        session-config (-> (:session ring-defaults/site-defaults)
+                           (assoc :store session-store)
+                           (assoc :cookie-name "active-openid-session")
+                           (assoc-in [:cookie-attrs :same-site] :lax))]
+    (-> handler
+        (ring-session/wrap-session session-config))))
+
 (defn wrap-openid-authentication
   "Middleware stack for OpenID authentication.
   See [[wrap-openid-authentication*]]"
   [config & args]
-  (let [wrap-openid (apply wrap-openid-authentication* config args)
-        session-store (ring-session-memory/memory-store)
-        ring-config
-        (-> ring-defaults/site-defaults
-            (assoc-in [:session :store] session-store)
-            (assoc-in [:session :cookie-attrs :same-site] :lax))]
+  (let [wrap-openid-auth (apply wrap-openid-authentication* config args)]
     (fn [handler]
       (-> handler
-          (ring-session/wrap-session (:session ring-config))
-          ring-cookies/wrap-cookies
-          ring-params/wrap-params
-          wrap-openid))))
+          wrap-openid-auth
+          wrap-openid-session))))
 
 (defn request-user-info
   [request]

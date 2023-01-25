@@ -6,20 +6,8 @@
             [clojure.edn :as edn]
             [hiccup.page :as hp]
             [reitit.ring :as rr]
-            [ring.adapter.jetty :as jetty]
-            [ring.middleware.cookies :as ring-cookies]
-            [ring.middleware.defaults :as ring-defaults]
-            [ring.middleware.params :as ring-params]
-            [ring.middleware.session :as ring-session]
-            [ring.middleware.session.memory :as ring-session-memory])
+            [ring.adapter.jetty :as jetty])
   (:gen-class))
-
-(def session-store (ring-session-memory/memory-store))
-
-(def ring-config
-  (-> ring-defaults/site-defaults
-      (assoc-in [:session :store] session-store)
-      (assoc-in [:session :cookie-attrs :same-site] :lax)))
 
 (defn application
   [req]
@@ -50,10 +38,7 @@
       [["/" {:get {:handler application}}]
        [["/deep/link/" {:get {:handler application}}]]])
     (rr/create-default-handler)
-    {:middleware [[ring-session/wrap-session (:session ring-config)]
-                  [ring-cookies/wrap-cookies]
-                  [ring-params/wrap-params]
-                  [(openid/wrap-openid-authentication* config)]]}))
+    {:middleware [(openid/wrap-openid-authentication config)]}))
 
 (defonce server (atom nil))
 
