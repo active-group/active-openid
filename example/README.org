@@ -4,7 +4,7 @@ This example shows how to use the `active-openid` library to secure a web
 application.
 
 This example uses Keycloak as its identity provider, we have provided a Docker
-composition that runs Keycloak and sets it up with our example realm.
+composition that runs Keycloak and sets it up with our example realm and client.
 
 Then you can run the example.
 
@@ -16,6 +16,9 @@ docker-compose up
 
 You can connect to the Keycloak admin console at http://localhost:8080 and login
 with the default admin user ~admin~ with default password ~admin~.
+
+TODO: We did not yet manage to import users, so you have to create users for
+testing the login yourself via Keycloak's admin console.
 
 ** Run the example application
 
