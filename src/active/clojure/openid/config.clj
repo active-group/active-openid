@@ -71,45 +71,10 @@
 (def openid-client-section
   (config/section :client openid-client-schema))
 
-(def openid-callback-uris-launch-uri
-  (config/setting
-   :launch-uri
-   "The relative uri that initiates the authentication process."
-   config/string-range))
-
-(def openid-callback-uris-redirect-uri
-  (config/setting
-   :redirect-uri
-   "The relative uri that serves as the callback endpoint to the authentication process."
-   config/string-range))
-
-(def openid-callback-uris-landing-uri
-  (config/setting
-   :landing-uri
-   "The relative uri a user will be redirected to after a logout."
-   config/string-range))
-
-(def openid-callback-uris-logout-uri
-  (config/setting
-   :logout-uri
-   "The relative uri that serves as the logout endpoint."
-   config/string-range))
-
-(def openid-callback-uris-schema
-  (config/schema "The openid callback-uri schema."
-                 openid-callback-uris-launch-uri
-                 openid-callback-uris-redirect-uri
-                 openid-callback-uris-landing-uri
-                 openid-callback-uris-logout-uri))
-
-(def openid-callback-uris-section
-  (config/section :callback-uris openid-callback-uris-schema))
-
 (def openid-profile-schema
   (config/schema "Configuration schema for the openid connect configuration."
                  openid-provider-section
-                 openid-client-section
-                 openid-callback-uris-section))
+                 openid-client-section))
 
 (def openid-profiles-schema
   (config/sequence-schema

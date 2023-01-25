@@ -13,11 +13,7 @@
                      :secret      "<redacted>"
                      :scopes      ["openid" "username" "email"]
                      :basic-auth? true
-                     :base-uri    "http://localhost:8888"}
-     :callback-uris {:launch-uri   "/auth/login"
-                     :redirect-uri "/auth/login-callback"
-                     :landing-uri  "/login"
-                     :logout-uri   "/auth/logout"}}]})
+                     :base-uri    "http://localhost:8888"}}]})
 
 (def config (active-config/make-configuration openid-config/openid-schema
                                               []

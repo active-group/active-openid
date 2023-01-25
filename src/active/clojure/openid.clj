@@ -4,18 +4,25 @@
             [active.clojure.openid :as openid]
             [active.clojure.openid.config :as openid-config]
             [active.clojure.record :refer [define-record-type]]
-            [clojure.spec.alpha :as s]
+            [active.clojure.logger.event :as log]
             [clj-http.client :as http-client]
             [clj-time.core :as time]
+            [clj-time.coerce :as time-coerce]
+            [camel-snake-kebab.core :as csk]
             [clojure.data.json :as json]
             [clojure.string :as string]
             [crypto.random :as random]
-            [ring.middleware.params :refer [wrap-params]]
+            [hiccup.page :as hp]
             [ring.util.codec :as codec]
-            [ring.util.response :as response])
-  (:import [java.net URI]))
+            [ring.util.response :as response]
+            [ring.middleware.cookies :as ring-cookies]
+            [ring.middleware.defaults :as ring-defaults]
+            [ring.middleware.params :as ring-params]
+            [ring.middleware.session :as ring-session]
+            [ring.middleware.session.memory :as ring-session-memory]))
 
-(define-record-type OpenIdProviderConfig
+(define-record-type OpenidProviderConfig
+  {:projection-lens openid-provider-config-projection-lens}
   make-openid-provider-config openid-provider-config?
   [authorize-endpoint     openid-provider-config-authorize-endpoint
    token-endpoint         openid-provider-config-token-endpoint
@@ -24,8 +31,17 @@
    check-session-endpoint openid-provider-config-check-session-endpoint
    supports-backchannel-logout? openid-provider-config-supports-backchannel-logout?])
 
+(def openid-provider-config-lens
+  (openid-provider-config-projection-lens :authorization-endpoint
+                                          :token-endpoint
+                                          :userinfo-endpoint
+                                          :end-session-endpoint
+                                          :check-session-endpoint
+                                          :supports-backchannel-logout?))
+
 (define-record-type ^{:doc "Wraps all necessary information for a openid identity provider profile."}
   OpenidProfile
+  {:projection-lens openid-profile-projection-lens}
   make-openid-profile openid-profile?
   [name                   openid-profile-name
    uri-prefix             openid-profile-uri-prefix
@@ -34,48 +50,59 @@
    client-secret          openid-profile-client-secret
    scopes                 openid-profile-scopes
    base-uri               openid-profile-base-uri
-   launch-uri             openid-profile-launch-uri
-   redirect-uri           openid-profile-redirect-uri
-   landing-uri            openid-profile-landing-uri
-   logout-uri             openid-profile-logout-uri
    basic-auth?            openid-profile-basic-auth?])
 
-(defn prefixed-uri
-  "Returns a `uri` prefixed with the name of the `openid-profile`."
-  [openid-profile uri]
-  (if (empty? (openid-profile-uri-prefix openid-profile))
-    uri
-    (str "/" (openid-profile-uri-prefix openid-profile) uri)))
-
-(defn launch-uri
-  "Returns the qualified launch-uri of an `openid-profile`."
-  [openid-profile]
-  (prefixed-uri openid-profile (openid-profile-launch-uri openid-profile)))
-
-(defn redirect-uri
-  "Returns the qualified redirect-uri of an `openid-profile`."
-  [openid-profile]
-  (prefixed-uri openid-profile (openid-profile-redirect-uri openid-profile)))
-
-(defn absolute-redirect-uri
-  "Returns the qualified redirect-uri of an `openid-profile`."
-  [openid-profile]
-  (str (openid-profile-base-uri openid-profile)
-       (redirect-uri openid-profile)))
-
-(defn- openid-supports-backchannel-logout?
-  ;; True if the `openid-profile` supports backchannel logouts as discovered
-  ;; on the .well-known page.
-  [openid-profile]
-  (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
-                                     openid-provider-config-supports-backchannel-logout?)))
+(def openid-profile-lens
+  (openid-profile-projection-lens :name
+                                  :uri-prefix
+                                  (lens/>> :provider-config openid-provider-config-lens)
+                                  :client-id
+                                  :client-secret
+                                  :scopes
+                                  :base-uri
+                                  :basic-auth?))
 
 (define-record-type OpenidInstanceNotAvailable
   make-openid-instance-not-available openid-instance-not-available?
-  [tried-endpoint openid-instance-not-available-tried-instance
+  [name openid-instance-not-available-name
+   tried-endpoint openid-instance-not-available-tried-instance
    error-msg openid-instance-not-available-error-msg])
 
-(defn- get-openid-provider-config!
+(define-record-type AccessToken
+  {:projection-lens access-token-projection-lens}
+  make-access-token
+  access-token?
+  [token access-token-token
+   type access-token-type
+   refresh-token access-token-refresh-token
+   id-token access-token-id-token
+   expires access-token-expires
+   extra-data access-token-extra-data])
+
+(def access-token-lens
+  (access-token-projection-lens :token :type :refresh-token :id-token
+                                (lens/>> :expires (lens/xmap time-coerce/to-long time-coerce/from-long))
+                                :extra-data))
+
+(define-record-type UserInfo
+  {:projection-lens user-info-projection-lens}
+  make-user-info
+  user-info?
+  [id user-info-id
+   login user-info-login
+   name user-info-name
+   rest user-info-rest
+   openid-profile user-info-openid-profile
+   logout-uri user-info-logout-uri
+   access-token user-info-access-token])
+
+(def user-info-lens
+  (user-info-projection-lens :id :login :name :rest
+                             (lens/>> :openid-profile openid-profile-lens)
+                             :logout-uri
+                             (lens/>> :access-token access-token-lens)))
+
+(defn get-openid-provider-config!
   ;; Based on the connection parameters, fetches the openid provider
   ;; configuration from the .well-known json object provided by the idp.
 
@@ -83,42 +110,37 @@
 
   ;; If the openid instance is not available, returns
   ;; an [[%openid-instance-not-available]]] condition.
-  [provider-config-uri]
-  (try (let [{:keys [status body]} (http-client/get provider-config-uri)]
+  [provider-name provider-config-uri]
+  (log/log-event! :debug (log/log-msg "Requesting openid provider config for" provider-name "from" provider-config-uri))
+  (try (let [{:keys [status body]} (http-client/get provider-config-uri {:throw-exceptions false})]
+         (log/log-event! :debug (log/log-msg "Received reply from" provider-config-uri ":" status body))
          (case status
-           200 (let [json-map (json/read-str body)]
-                 (make-openid-provider-config (get json-map "authorization_endpoint")
-                                              (get json-map "token_endpoint")
-                                              (get json-map "userinfo_endpoint")
-                                              (get json-map "end_session_endpoint")
-                                              (get json-map "check_session_iframe")
-                                              (get json-map "backchannel_logout_supported")))
-           "error"))
+           200 (let [json-map (json/read-str body :key-fn csk/->kebab-case-keyword)]
+                 (openid-provider-config-lens json-map))
+           (make-openid-instance-not-available provider-name provider-config-uri (str status " " body))))
        (catch Exception e
-         (make-openid-instance-not-available provider-config-uri (.getMessage e)))))
+         (log/log-exception-event! :error (log/log-msg "Received exception from" provider-config-uri ":" (.getMessage e)) e)
+         (make-openid-instance-not-available provider-name provider-config-uri (.getMessage e)))))
 
 (defn make-openid-profile!
   "See make-openid-profiles!"
   [openid-config]
-  (let [provider-config-uri (active-config/access openid-config openid-config/openid-provider-config-uri openid-config/openid-provider-section)
+  (let [provider-name (active-config/access openid-config openid-config/openid-provider-name openid-config/openid-provider-section)
+        provider-config-uri (active-config/access openid-config openid-config/openid-provider-config-uri openid-config/openid-provider-section)
         ;; This might fail Also, this might be a bad idea:
         ;; TODO If the identity provider is unavailable at
         ;; startup, there is no recovery.
         provider-config-or-error
-        (get-openid-provider-config! provider-config-uri)]
+        (get-openid-provider-config! provider-name provider-config-uri)]
     (cond
       (openid-provider-config? provider-config-or-error)
-      (make-openid-profile (active-config/access openid-config openid-config/openid-provider-name openid-config/openid-provider-section)
+      (make-openid-profile provider-name
                            (active-config/access openid-config openid-config/openid-provider-uri-prefix openid-config/openid-provider-section)
                            provider-config-or-error
                            (active-config/access openid-config openid-config/openid-client-id openid-config/openid-client-section)
                            (active-config/access openid-config openid-config/openid-client-secret openid-config/openid-client-section)
                            (active-config/access openid-config openid-config/openid-client-scopes openid-config/openid-client-section)
                            (active-config/access openid-config openid-config/openid-client-base-uri openid-config/openid-client-section)
-                           (active-config/access openid-config openid-config/openid-callback-uris-launch-uri openid-config/openid-callback-uris-section)
-                           (active-config/access openid-config openid-config/openid-callback-uris-redirect-uri openid-config/openid-callback-uris-section)
-                           (active-config/access openid-config openid-config/openid-callback-uris-landing-uri openid-config/openid-callback-uris-section)
-                           (active-config/access openid-config openid-config/openid-callback-uris-logout-uri openid-config/openid-callback-uris-section)
                            (active-config/access openid-config openid-config/openid-client-basic-auth? openid-config/openid-client-section))
 
       (openid-instance-not-available? provider-config-or-error)
@@ -134,256 +156,393 @@
   [config]
   (mapv make-openid-profile! (active-config/section-subconfig config openid-config/openid-profiles-section)))
 
-(defn- join-scopes
+
+;; logins
+
+(define-record-type Logins
+  make-logins
+  logins?
+  [state-profile-map logins-state-profile-map
+   availables logins-availables
+   unavailables logins-unavailables])
+
+(define-record-type AvailableLogin
+  make-available-login
+  available-login?
+  [uri available-login-uri
+   name available-login-name])
+
+(define-record-type UnavailableLogin
+  make-unavailable-login
+  unavailable-login?
+  [name unavailable-login-name
+   error unavailable-login-error])
+
+(defn absolute-redirect-uri
+  "Returns the qualified redirect-uri of an `openid-profile`."
+  [openid-profile & [uri]]
+  (str (openid-profile-base-uri openid-profile) uri))
+
+(defn join-scopes
   ;; Returns a string containing all configured
   ;; [[openid-profile-scopes]], separated by `\space`.
   [openid-profile]
   (string/join " " (map name (openid-profile-scopes openid-profile))))
 
-(defn- authorize-uri
-  [openid-profile state]
+(defn authorize-uri
+  [openid-profile state redirect-uri]
   (let [authorize-uri (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
                                                          openid-provider-config-authorize-endpoint))]
     (str authorize-uri
          (if (string/includes? authorize-uri "?") "&" "?")
          (codec/form-encode {:response_type "code"
                              :client_id     (openid-profile-client-id openid-profile)
-                             :redirect_uri  (absolute-redirect-uri openid-profile)
+                             :redirect_uri  (absolute-redirect-uri openid-profile redirect-uri)
                              :state         state
                              :scope         (join-scopes openid-profile)}))))
 
-(defn- random-state
+(defn random-state
   []
   (-> (random/base64 9)
       (string/replace "+" "-")
       (string/replace "/" "_")))
 
-(defn make-launch-handler
-  [openid-profile]
-  (fn [request]
-    (let [state       (random-state)
-          new-session (assoc (:session request) ::authorize-state state)]
-      (-> (response/redirect (authorize-uri openid-profile state))
-          (assoc :session new-session)))))
+(defn logins-from-config!
+  [config redirect-uri]
+  (let [openid-profiles (make-openid-profiles! config)
+        available-profiles (filter openid-profile? openid-profiles)
+        unavailable-profiles (remove openid-profile? openid-profiles)
+        state-profile-map (into {} (mapv (fn [openid-profile]
+                                           [(random-state) (openid-profile-lens {} openid-profile)])
+                                         available-profiles))]
+    (make-logins (if (empty? state-profile-map) nil state-profile-map)
+                 (mapv (fn [[state _openid-profile-map] openid-profile]
+                         (make-available-login (authorize-uri openid-profile state redirect-uri)
+                                               (openid-profile-name openid-profile)))
+                       state-profile-map available-profiles)
+                 (mapv (fn [openid-instance-not-available] (make-unavailable-login (openid-instance-not-available-name openid-instance-not-available)
+                                                                                   (openid-instance-not-available-error-msg openid-instance-not-available)))
+                       unavailable-profiles))))
 
-(defn- coerce-to-int [n]
+;; post access token
+
+(defn coerce-to-int [n]
   (if (string? n)
     (Integer/parseInt n)
     n))
 
-(defn- format-access-token
-  [{{:keys [access_token expires_in refresh_token id_token] :as body} :body}]
-  (-> {:token      access_token
-       :extra-data (dissoc body :access_token :expires_in :refresh_token :id_token)}
-      (cond-> expires_in (assoc :expires (-> expires_in
-                                             coerce-to-int
-                                             time/seconds
-                                             time/from-now))
-              refresh_token (assoc :refresh-token refresh_token)
-              id_token      (assoc :id-token id_token))))
-
-(defn- get-authorization-code
+(defn get-authorization-code
   [request]
   (get-in request [:query-params "code"]))
 
-(defn- request-params
-  [openid-profile request]
-  {:grant_type   "authorization_code"
-   :code         (get-authorization-code request)
-   :redirect_uri (absolute-redirect-uri openid-profile)})
-
-(defn- add-header-credentials
+(defn add-header-credentials
   [options client-id client-secret]
   (assoc options :basic-auth [client-id client-secret]))
 
-(defn- add-form-credentials
+(defn add-form-credentials
   [options client-id client-secret]
   (assoc options :form-params (-> (:form-params options)
                                   (merge {:client_id     client-id
                                           :client_secret client-secret}))))
 
-(defn- post-access-token!
+(define-record-type NoAccessToken
+  make-no-access-token
+  no-access-token?
+  [error-message no-access-token-error-message])
+
+(defn format-access-token
+  [{:keys [access-token token-type expires-in refresh-token id-token] :as body}]
+  (make-access-token access-token
+                     token-type
+                     refresh-token
+                     id-token
+                     (-> expires-in
+                         coerce-to-int
+                         time/seconds
+                         time/from-now)
+                     (dissoc body :access-token :token-type :expires-in :refresh-token :id-token)))
+
+(defn fetch-access-token!
   "For a `openid-profile` and based on a `request` (the response of the
   idp), fetch the actual (JWT) access token.
 
   Might throw an exception."
-  [openid-profile request]
+  [openid-profile authorization-code redirect-uri]
   (let [access-token-uri (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
                                                             openid-provider-config-token-endpoint))
         client-id        (openid-profile-client-id openid-profile)
         client-secret    (openid-profile-client-secret openid-profile)
-        basic-auth?      (openid-profile-basic-auth? openid-profile)]
-    (let [resp (http-client/post access-token-uri
-                                 (cond-> {:accept :json, :as :json,
-                                          :form-params (request-params openid-profile request)}
-                                   basic-auth?       (add-header-credentials client-id client-secret)
-                                   (not basic-auth?) (add-form-credentials client-id client-secret)))]
-      (format-access-token resp))))
+        basic-auth?      (openid-profile-basic-auth? openid-profile)
+        payload          (cond-> {:form-params {:grant_type   "authorization_code"
+                                                :code         authorization-code
+                                                :redirect_uri (absolute-redirect-uri openid-profile redirect-uri)}}
+                           basic-auth?       (add-header-credentials client-id client-secret)
+                           (not basic-auth?) (add-form-credentials client-id client-secret))]
+    (log/log-event! :debug (log/log-msg "Requesting access token from" access-token-uri "with payload" payload))
 
-(defn- state-matches?
-  ;; Checks if the state given in the original request matches the
-  ;; response given by the idp.
-  [request]
-  (= (get-in request [:session ::authorize-state])
-     (get-in request [:query-params "state"])))
+    (try (let [{:keys [status body]} (http-client/post access-token-uri payload {:throw-exceptions false})]
+           (log/log-event! :debug (log/log-msg "Received reply from" access-token-uri ":" status body))
+           (case status
+             200 (let [json-map (json/read-str body :key-fn csk/->kebab-case-keyword)]
+                   (format-access-token json-map))
+             (make-no-access-token (str status " " body))))
+         (catch Exception e
+           (log/log-exception-event! :error (log/log-msg "Received exception from" access-token-uri ":" (.getMessage e)) e)
+           (make-no-access-token (.getMessage e))))))
 
-(def ^:private state-mismatch-response {:status 400, :headers {}, :body "State mismatch"})
-(def default-state-mismatch-handler (constantly state-mismatch-response))
+;; default handler for middleware
 
-(def ^:private no-auth-code-response {:status 400, :headers {}, :body "No authorization code"})
-(def default-no-auth-code-handler (constantly no-auth-code-response))
+(defn default-error-handler
+  [request error-string & [exception]]
+  {:status 500
+   :headers {"Content-Type" "text/html"}
+   :body
+   (hp/html5
+     [:head [:meta {:charset "UTF-8"}]]
+     [:body
+      [:main
+       [:div
+        [:h1 "Error:"]
+        [:code error-string]
+        [:h1 "Session:"]
+        [:code (:session request)]
+        [:h1 "Exception:"]
+        (when exception
+          [:code (pr-str exception)])]]])})
 
-;; Some specs just to make sure theres an understanding on how the
-;; session part of the request-map is supposed to be structured.
-(s/def ::profile-name (s/or :string string? :key keyword?))
-(s/def ::token string?)
-(s/def ::token_type string?)
-(s/def ::extra-data (s/keys :opt-un [::token_type]))
-(s/def ::token-map (s/keys :req-un [::token ::extra-data]))
-(s/def ::access-tokens (s/map-of ::profile-name ::token-map))
-(s/def ::session (s/keys :req [::access-tokens]))
-(s/def ::request (s/keys :opt-un [::session]))
+(defn render-available-login
+  [available-login]
+  [:a {:href (available-login-uri available-login)}
+   (available-login-name available-login)])
 
-(s/fdef make-redirect-handler
-  :ret (s/fspec :args (s/cat :req ::request)))
-(defn make-redirect-handler
-  "Creates a redirect (callback) handler for a `openid-profile`.  A
-  successful login might result in an exceptional state (i.e. when
-  the server cannot be reached after receiving the code.  Such
-  errors will be returned as a ring-response with code 500 and the
-  class and message as a Clojure-map."
-  [openid-profile no-auth-code-handler state-mismatch-handler]
-  (fn [{:keys [session] :as request}]
-    (cond
-      (not (state-matches? request))
-      (state-mismatch-handler request)
+(defn render-unavailable-login
+  [unavailable-login]
+  [:span (unavailable-login-name unavailable-login)
+   (str "(" (unavailable-login-error unavailable-login) ")")])
 
-      (nil? (get-authorization-code request))
-      (no-auth-code-handler request)
+(defn default-login-handler
+  [_req availables unavailables]
+  (let [resp {:status 200
+              :headers {"Content-Type" "text/html"}
+              :body
+              (hp/html5
+                [:head [:meta {:charset "UTF-8"}]]
+                [:body
+                 [:main
+                  [:div
+                   [:h1 "Login:"]
+                   [:h2 "available identity providers:"]
+                   [:ul (for [x (mapv render-available-login availables)]
+                          [:li x])]
+                   [:h2 "unavailable identity providers:"]
+                   [:ul (for [x (mapv render-unavailable-login unavailables)]
+                          [:li x])]]]])}]
+    resp))
 
-      :else
-      (try
-        (let [access-token (post-access-token! openid-profile request)]
-          (-> (response/redirect (openid-profile-landing-uri openid-profile))
-              (assoc :session (-> session
-                                  (assoc-in [::access-tokens (openid-profile-name openid-profile)] access-token)
-                                  (dissoc ::authorize-state)))))
-        (catch Exception e
-          (-> (response/response {:message (.getMessage e)})
-              (response/status 500)
-              (response/header "Content-Type" "application/json")))))))
+(def default-logout-endpoint "/logout")
 
-(defn- make-user-session-destroyer
-  [openid-profile]
-  (fn [req]
-    (update-in req [:session ::access-tokens] dissoc (openid-profile-name openid-profile))))
-
-(s/fdef req->access-tokens
-  :args (s/cat :req ::request)
-  :ret (s/nilable ::access-tokens))
-(defn req->access-tokens
-  "Returns a map of all access-tokens from a ring `req`.  The format
-  is [name-of-profile access-token]."
-  [req]
-  (-> req :session ::access-tokens))
-
-(s/fdef req->access-token-for-profile
-  :args (s/cat :req ::request :openid-profile openid-profile?)
-  :ret (s/nilable ::token))
-(defn req->access-token-for-profile
-  "Returns the access token for `openid-profile` if there is one."
-  [req openid-profile]
-  (-> (req->access-tokens req)
-      (get-in [(openid-profile-name openid-profile) :token])))
-
-(s/fdef req->access-token-type-for-profile
-  :args (s/cat :req ::request :openid-profile openid-profile?)
-  :ret (s/nilable ::token_type))
-(defn req->access-token-type-for-profile
-  "Returns the access token's type for `openid-profile` if there is
-  one."
-  [req openid-profile]
-  (-> (req->access-tokens req)
-      (get-in [(openid-profile-name openid-profile) :extra-data :token_type])))
-
-(s/fdef req->openid-profile
-  :args (s/cat :req ::request :openid-profiles (s/coll-of openid-profile?))
-  :ret (s/nilable openid-profile?))
-(defn req->openid-profile
-  "Get the [[OpenidProfile]] out of `openid-profiles` that is used for
-  `req`.  Assumes there is only one active session."
-  [req openid-profiles]
-  (let [access-tokens (req->access-tokens req)]
-    (first (filter (fn [openid-profile]
-                     (some? (req->access-token-for-profile req openid-profile)))
-                   openid-profiles))))
-
-(defn openid-logout
-  "Function that performs a logout at the idp for the current user.
-  Clears the whole :session for the `openid-profile`.
-
-  - `host+port` points to the host (and port) this
-  application (e.g. \"http://localhost:8000\" is running on.  Openid
-  needs an absolute url to redirect the browser after a successful
-  logout.
-  "
-  [host+port openid-profile id-token-hint]
+(defn logout-uri
+  [openid-profile id-token-hint logout-endpoint]
   (let [end-session-endpoint
         (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
-                                           openid-provider-config-end-session-endpoint))
-        destroy-user-session (make-user-session-destroyer openid-profile)]
-    (-> (response/redirect
-         (str end-session-endpoint
-              "?"
-              (codec/form-encode {:post_logout_redirect_uri (str host+port
-                                                                 (openid-profile-landing-uri openid-profile))
-                                  :id_token_hint            id-token-hint})))
-        destroy-user-session)))
+                                           openid-provider-config-end-session-endpoint))]
+    (str end-session-endpoint
+         "?"
+         (codec/form-encode {:post_logout_redirect_uri (absolute-redirect-uri openid-profile logout-endpoint)
+                             :id_token_hint            id-token-hint}))))
 
-(defn reitit-routes-for-profile
-  "For a given [[OpenidProfile]], returns a vector containing the launch-
-  and login-callback handlers."
-  [openid-profile no-auth-code-handler state-mismatch-handler]
-  [[(launch-uri openid-profile)
-    {:get {:handler (make-launch-handler openid-profile)}}]
-   [(redirect-uri openid-profile)
-    {:get {:handler    (make-redirect-handler openid-profile no-auth-code-handler state-mismatch-handler)
-           :middleware [[wrap-params]]}}]])
+(def authorization-started-lens
+  (lens/>> :session ::authorization-started))
 
-(defn reitit-routes
-  "Based on a sequence of [[OpenidProfile]]s, returns a vector of two
-  reitit routes that handle the initial login launch and the openid
-  callback.
-  Takes an optional map with up to two keys
+(def authorized-lens
+  (lens/>> :session ::authorized))
 
-  - `:no-auth-code-handler`: Handler that the callback handler calls
-  on the result when no authentication code is provided.  Defaults
-  to [[default-no-auth-code-handler]].
+(defn authorization-started-state
+  ([request]
+   (authorization-started-lens request))
+  ([request payload]
+   (-> request
+       (authorization-started-lens payload)
+       (authorized-lens nil))))
 
-  - `:state-mismatch-handler`: Handle the callback handler calls on
-  the result when the state provided by this applcication doesn't
-  match the state given in the response of the idp.  Defaults
-  to [[default-state-mismatch-handler]].
+(defn authorized-state
+  ([request]
+   (authorized-lens request))
+  ([request payload]
+   (-> request
+       (authorized-lens payload)
+       (authorization-started-lens nil))))
 
-  Each of them will be applied to _every_ profile.
+(defn unauthorized-state
+  ([request & _]
+   (-> request
+       (authorization-started-lens nil)
+       (authorized-lens nil))))
 
-  After a login attempt, the identity provider calls the provided
-  callback handler which results in three possible scenarios:
+(defn unauthorized-state?
+  [request]
+  (or (and (nil? (authorized-state request))
+           (nil? (authorization-started-state request)))
+      (and (nil? (authorized-state request))
+           (and (some? (authorization-started-state request))
+                (nil? (get-in request [:query-params "state"]))))))
 
-  1. A valid login: The login was successful.  The callback handler
-  will use the code provided by the idp and fetches an access token (a
-  JWT token).  The token will be passed to the session under
-  `[::access-tokens <openid-profile-name> <access-token>]`.
+(defn authorization-started-state?
+  [request]
+  (some? (authorization-started-state request)))
 
-  2. The idp didn't provide an authorization code.  The callback
-  handler returns the [[no-auth-code-response]].
+(defn authorized-state?
+  [request]
+  (some? (authorized-state request)))
 
-  3. The state code's did not match.  The callback handle rreturns
-  the [[state-mismatch-response]]."
-  [openid-profiles & [{:keys [no-auth-code-handler
-                              state-mismatch-handler]
-                       :or   {no-auth-code-handler   default-no-auth-code-handler
-                              state-mismatch-handler default-state-mismatch-handler}}]]
-  (into [] (mapcat (fn [openid-profile]
-                     (reitit-routes-for-profile openid-profile no-auth-code-handler state-mismatch-handler))
-                   openid-profiles)))
+(define-record-type NoUserInfo
+  make-no-user-info
+  no-user-info?
+  [error-message no-user-info-error-message])
+
+(defn fetch-user-info
+  [openid-profile access-token logout-endpoint]
+  (let [token (access-token-token access-token)
+        token-type (access-token-type access-token)
+        id-token (access-token-id-token access-token)]
+    (when token
+      (let [user-info-uri (lens/yank openid-profile (lens/>> openid/openid-profile-openid-provider-config
+                                                              openid/openid-provider-config-userinfo-endpoint))
+            payload       {:headers {:authorization (str token-type " " token)}}]
+        (log/log-event! :debug (log/log-msg "Requesting user info from" user-info-uri "with payload" payload))
+        (try
+          (let [{:keys [status body]} (http-client/get user-info-uri payload)]
+            (log/log-event! :debug (log/log-msg "Received response from " user-info-uri ":" status body))
+            (case status
+              200 (let [user-data (json/read-str body :key-fn csk/->kebab-case-keyword)]
+                    (make-user-info (:id user-data)
+                                    (:username user-data)
+                                    (:name user-data)
+                                    user-data
+                                    openid-profile
+                                    (logout-uri openid-profile id-token logout-endpoint)
+                                    access-token))
+              (make-no-user-info (str status " " body))))
+          (catch Exception e
+            (log/log-exception-event! :error (log/log-msg "Received exception from" user-info-uri ":" (.getMessage e)) e)
+            (make-no-user-info (.getMessage e))))))))
+
+(defn wrap-openid-authentication*
+  "Middleware that shortcuts execution of the `handler` and redirects the user
+  to the login page.
+
+  It also takes care of the openid authentication process states `unauthorized`,
+  `authorization started`, `authorized`.
+
+  The state `authorization started` is the most complicated one: There, the
+  middleware tries to obtain tokens and user data from the IDP and needs to
+  validate the data.
+
+  - `:login-handler`: Handler that the middleware calls if currently
+  unauthorized.  The login handler should display links to IDPs to start the
+  authentication process.  The login handler gets called with three arguments:
+     - `request`: The current request
+     - `availables`: List of [[Available]] IDPs
+     - `unavailables`: List of [[Unavailable]] IDPs
+  If not `:login-handler` is given, it defaults to [[default-login-handler]].
+
+  - `:logout-endpoint`: The endpoint for the IDP to redirect to after
+  user-initated logout.  This is needed to remove the auth information from the
+  session.  Defaults to [[default-logout-endpoint]].
+
+  - `:error-handler`: Handler thet the middleware calls in case of some
+  unexpected error.  The error handler gets called with these arguments:
+     - `request`: The current request
+     - `error-string`: A string that describes the error
+     - and optionaly an `exception`
+  Defaults to [[default-error-handler]].
+  "
+  [config & [{:keys [login-handler
+                     logout-endpoint
+                     error-handler]
+              :or   {login-handler          default-login-handler
+                     logout-endpoint        default-logout-endpoint
+                     error-handler   default-error-handler}}]]
+  (fn [handler]
+    (fn [request]
+      (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: request" request))
+      (try
+        (cond
+          (re-matches (re-pattern (str "^" logout-endpoint)) (or (:uri request) ""))
+          (do
+            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: logout-endpoint, removing stored credentials"))
+            (-> (response/redirect "/")
+                (unauthorized-state)))
+
+          (unauthorized-state? request)
+          (do
+            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthorized"))
+            (let [logins (logins-from-config! config (:uri request))]
+              (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthorized, calling login handler for" (pr-str logins)))
+              (-> (login-handler request (logins-availables logins) (logins-unavailables logins))
+                  (authorization-started-state (logins-state-profile-map logins)))))
+
+            ;; this is the request that comes from the IDP
+          (authorization-started-state? request)
+          (let [state-from-idp (get-in request [:query-params "state"])
+                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authorization started, got state from IDP" state-from-idp))
+                state-profile-map (authorization-started-state request)
+                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authorization started, found state-profile-map" state-profile-map))
+                openid-profile-map (get state-profile-map state-from-idp)
+                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authorization started, trying to authorize with openid profile" openid-profile-map))]
+            (cond
+              (nil? openid-profile-map)
+              (-> (error-handler request "The state we got from IDP did not match our's.")
+                  (unauthorized-state))
+
+              (nil? (get-authorization-code request))
+              (-> (error-handler request "The authorization code from the IDP is missing.")
+                  (unauthorized-state))
+
+              :else
+              (let [openid-profile (openid-profile-lens openid-profile-map)
+                    access-token (fetch-access-token! openid-profile (get-authorization-code request) (:uri request))]
+                (if (no-access-token? access-token)
+                  (-> (error-handler request (str "Got no access token - " (no-access-token-error-message access-token)))
+                      (unauthorized-state))
+                  (let [user-info (fetch-user-info openid-profile access-token logout-endpoint)]
+                    (if (no-user-info? user-info)
+                      (-> (error-handler request (str "Got no user info - " (no-user-info-error-message access-token)))
+                          (unauthorized-state))
+                      (let [user-info-map (user-info-lens {} user-info)
+                            req-with-auth (authorized-state request user-info-map)]
+                        (-> (handler req-with-auth)
+                            (authorized-state user-info-map)))))))))
+
+          (authorized-state? request)
+          ;; FIXME: consider validity here, maybe refresh token
+          (do
+            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: already authorized, handling request" request))
+            (handler request)))
+        (catch Exception e
+          (log/log-exception-event! :error (log/log-msg "wrap-ensure-authenticated: caught exception" (.getMessage e) request) e)
+          (error-handler request (.getMessage e) e))))))
+
+(defn wrap-openid-authentication
+  "Middleware stack for OpenID authentication.
+  See [[wrap-openid-authentication*]]"
+  [config & args]
+  (let [wrap-openid (apply wrap-openid-authentication* config args)
+        session-store (ring-session-memory/memory-store)
+        ring-config
+        (-> ring-defaults/site-defaults
+            (assoc-in [:session :store] session-store)
+            (assoc-in [:session :cookie-attrs :same-site] :lax))]
+    (fn [handler]
+      (-> handler
+          (ring-session/wrap-session (:session ring-config))
+          ring-cookies/wrap-cookies
+          ring-params/wrap-params
+          wrap-openid))))
+
+(defn request-user-info
+  [request]
+  (let [user-info-map (authorized-state request)]
+    (if user-info-map
+      (user-info-lens user-info-map)
+      nil)))

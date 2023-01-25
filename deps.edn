@@ -1,9 +1,12 @@
-{:deps {de.active-group/active-clojure {:mvn/version "0.40.0"}
-        clj-time/clj-time              {:mvn/version "0.15.2"}
-        ring/ring                      {:mvn/version "1.9.5"}
-        clj-http/clj-http              {:mvn/version "3.12.3"}
-        org.clojure/data.json          {:mvn/version "2.4.0"}
-        compojure/compojure            {:mvn/version "1.6.2"}}
+{:deps {de.active-group/active-clojure      {:mvn/version "0.42.0-SNAPSHOT"}
+        de.active-group/active-logger       {:mvn/version "0.9.0"}
+        clj-time/clj-time                   {:mvn/version "0.15.2"}
+        hiccup/hiccup                       {:mvn/version "1.0.5"}
+        camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.2"}
+        ring/ring                           {:mvn/version "1.9.5"}
+        clj-http/clj-http                   {:mvn/version "3.12.3"}
+        org.clojure/data.json               {:mvn/version "2.4.0"}
+        compojure/compojure                 {:mvn/version "1.6.2"}}
 
  :paths ["src"]
 
