@@ -38,7 +38,13 @@ Include the schema =openid-schema= via a =section= in your code like this
 #+end_src
 
 * Usage
-See [[./example]].
+Add ~active.clojure.openid/wrap-openid-authentication~ to your middleware stack.
+That guards your routes from unauthenticted users and offers authentication.
+
+Use ~active.clojure.openid/user-info-from-request~ to obtain information about
+the logged-in user in your handlers from the current request.
+
+See [[./example]] for details.
 * Development
 For your convenience, this project includes a minimal [[./shell.nix][shell.nix]] file.
 Just run
