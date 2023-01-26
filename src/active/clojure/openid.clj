@@ -42,7 +42,6 @@
   {:projection-lens openid-profile-projection-lens}
   make-openid-profile openid-profile?
   [name                   openid-profile-name
-   uri-prefix             openid-profile-uri-prefix
    provider-config        openid-profile-openid-provider-config
    client-id              openid-profile-client-id
    client-secret          openid-profile-client-secret
@@ -51,7 +50,6 @@
 
 (def openid-profile-lens
   (openid-profile-projection-lens :name
-                                  :uri-prefix
                                   (lens/>> :provider-config openid-provider-config-lens)
                                   :client-id
                                   :client-secret
@@ -133,7 +131,6 @@
     (cond
       (openid-provider-config? provider-config-or-error)
       (make-openid-profile provider-name
-                           (active-config/access openid-config openid-config/openid-provider-uri-prefix openid-config/openid-provider-section)
                            provider-config-or-error
                            (active-config/access openid-config openid-config/openid-client-id openid-config/openid-client-section)
                            (active-config/access openid-config openid-config/openid-client-secret openid-config/openid-client-section)

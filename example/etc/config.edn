@@ -1,6 +1,5 @@
 {:openid-profiles
  [{:provider {:name       "keycloak"
-              :uri-prefix "keycloak" ;; NOTE nil or not present if no prefix should be added
               :config-uri "http://localhost:8080/realms/active-openid-example-realm/.well-known/openid-configuration"}
   :client    {:id     "active-openid-example-client"
               :secret "nbgj02Mt0kon32ObnmyubLYkSXTu6IhB"
