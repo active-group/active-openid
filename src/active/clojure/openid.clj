@@ -112,8 +112,9 @@
   (try (let [{:keys [status body]} (http-client/get provider-config-uri {:throw-exceptions false})]
          (log/log-event! :trace (log/log-msg "Received reply from" provider-config-uri ":" status body))
          (case status
-           200 (let [json-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
-                 (openid-provider-config-lens json-edn))
+           200 (let [provider-config-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
+                 (log/log-event! :debug (log/log-msg "Received provider config:" provider-config-edn))
+                 (openid-provider-config-lens provider-config-edn))
            (make-openid-instance-not-available provider-name provider-config-uri (str status " " body))))
        (catch Exception e
          (log/log-exception-event! :error (log/log-msg "Received exception from" provider-config-uri ":" (.getMessage e)) e)
@@ -283,8 +284,9 @@
     (try (let [{:keys [status body]} (http-client/post access-token-uri payload {:throw-exceptions false})]
            (log/log-event! :trace (log/log-msg "Received reply from" access-token-uri ":" status body))
            (case status
-             200 (let [json-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
-                   (format-access-token json-edn))
+             200 (let [access-token-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
+                   (log/log-event! :debug (log/log-msg "Received access-token" access-token-edn))
+                   (format-access-token access-token-edn))
              (make-no-access-token (str status " " body))))
          (catch Exception e
            (log/log-exception-event! :error (log/log-msg "Received exception from" access-token-uri ":" (.getMessage e)) e)
@@ -414,12 +416,12 @@
           (let [{:keys [status body]} (http-client/get user-info-uri payload)]
             (log/log-event! :trace (log/log-msg "Received response from " user-info-uri ":" status body))
             (case status
-              200 (let [user-data (json/read-str body :key-fn csk/->kebab-case-keyword)]
-                    (log/log-event! :debug (log/log-msg "Received user info:" user-data))
-                    (make-user-info (:preferred-username user-data)
-                                    (:name user-data)
-                                    (:email user-data)
-                                    user-data
+              200 (let [user-data-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
+                    (log/log-event! :debug (log/log-msg "Received user info:" user-data-edn))
+                    (make-user-info (:preferred-username user-data-edn)
+                                    (:name user-data-edn)
+                                    (:email user-data-edn)
+                                    user-data-edn
                                     openid-profile
                                     (logout-uri openid-profile id-token logout-endpoint)
                                     access-token))
@@ -479,42 +481,49 @@
           (do
             (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated"))
             (let [logins (logins-from-config! config (:uri request))]
-              (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated, calling login handler for" (pr-str logins)))
+              (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: unauthenticated, calling login handler for" (pr-str logins)))
               (-> (login-handler request (logins-availables logins) (logins-unavailables logins))
                   (authentication-started-state (logins-state-profile-edn logins)))))
 
             ;; this is the request that comes from the IDP
           (authentication-started-state? request)
-          (let [state-from-idp (get-session-state request)
-                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authentication started, got state from IDP" state-from-idp))
-                state-profile-edn (authentication-started-state request)
-                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authentication started, found state-profile-edn" state-profile-edn))
-                openid-profile-edn (get state-profile-edn state-from-idp)
-                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authentication started, trying to authorize with openid profile" openid-profile-edn))]
-            (cond
-              (nil? openid-profile-edn)
-              (-> (error-handler request "The state we got from IDP did not match our's.")
-                  (unauthenticated-state))
+          (do
+            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authentication-started"))
+            (let [state-from-idp (get-session-state request)
+                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, got state from IDP" state-from-idp))
+                  state-profile-edn (authentication-started-state request)
+                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, found state-profile-edn" state-profile-edn))
+                  openid-profile-edn (get state-profile-edn state-from-idp)
+                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, trying to authorize with openid profile" openid-profile-edn))]
+              (cond
+                (nil? openid-profile-edn)
+                (-> (error-handler request "The state we got from IDP did not match our's.")
+                    (unauthenticated-state))
 
-              (nil? (get-authorization-code request))
-              (-> (error-handler request "The authorization code from the IDP is missing.")
-                  (unauthenticated-state))
+                (nil? (get-authorization-code request))
+                (-> (error-handler request "The authorization code from the IDP is missing.")
+                    (unauthenticated-state))
 
-              :else
-              (let [openid-profile (openid-profile-lens openid-profile-edn)
-                    access-token (fetch-access-token! openid-profile (get-authorization-code request) (:uri request))]
-                (if (no-access-token? access-token)
-                  (-> (error-handler request (str "Got no access token - " (no-access-token-error-message access-token)))
-                      (unauthenticated-state))
-                  (let [user-info (fetch-user-info openid-profile access-token logout-endpoint)]
-                    (if (no-user-info? user-info)
-                      (-> (error-handler request (str "Got no user info - " (no-user-info-error-message user-info)))
-                          (unauthenticated-state))
-                      (let [user-info-edn (user-info-lens {} user-info)
-                            req-with-auth (authenticated-state request user-info-edn)]
-                        (log/log-event! :info (log/log-msg "Successfully logged in user" user-info))
-                        (-> (handler req-with-auth)
-                            (authenticated-state user-info-edn)))))))))
+                :else
+                (let [openid-profile (openid-profile-lens openid-profile-edn)
+                      access-token (fetch-access-token! openid-profile (get-authorization-code request) (:uri request))]
+                  (if (no-access-token? access-token)
+                    (-> (error-handler request (str "Got no access token - " (no-access-token-error-message access-token)))
+                        (unauthenticated-state))
+                    (do
+                      (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: got access-token" (pr-str access-token)))
+                      (let [user-info (fetch-user-info openid-profile access-token logout-endpoint)]
+                        (if (no-user-info? user-info)
+                          (-> (error-handler request (str "Got no user info - " (no-user-info-error-message user-info)))
+                              (unauthenticated-state))
+
+                          (do
+                            (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: got user-info" (pr-str user-info)))
+                            (let [user-info-edn (user-info-lens {} user-info)
+                                  req-with-auth (authenticated-state request user-info-edn)]
+                              (log/log-event! :info (log/log-msg "Successfully logged in user" (user-info-username user-info)))
+                              (-> (handler req-with-auth)
+                                  (authenticated-state user-info-edn))))))))))))
 
           (authenticated-state? request)
           ;; FIXME: consider validity here, maybe refresh token https://auth0.com/docs/authenticate/login/oidc-conformant-authentication/oidc-adoption-refresh-tokens
