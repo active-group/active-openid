@@ -109,9 +109,9 @@
   ;; If the openid instance is not available, returns
   ;; an [[%openid-instance-not-available]]] condition.
   [provider-name provider-config-uri]
-  (log/log-event! :debug (log/log-msg "Requesting openid provider config for" provider-name "from" provider-config-uri))
+  (log/log-event! :trace (log/log-msg "Requesting openid provider config for" provider-name "from" provider-config-uri))
   (try (let [{:keys [status body]} (http-client/get provider-config-uri {:throw-exceptions false})]
-         (log/log-event! :debug (log/log-msg "Received reply from" provider-config-uri ":" status body))
+         (log/log-event! :trace (log/log-msg "Received reply from" provider-config-uri ":" status body))
          (case status
            200 (let [json-map (json/read-str body :key-fn csk/->kebab-case-keyword)]
                  (openid-provider-config-lens json-map))
@@ -286,10 +286,10 @@
                                                 :redirect_uri (absolute-redirect-uri openid-profile redirect-uri)}}
                            basic-auth?       (add-header-credentials client-id client-secret)
                            (not basic-auth?) (add-form-credentials client-id client-secret))]
-    (log/log-event! :debug (log/log-msg "Requesting access token from" access-token-uri "with payload" payload))
+    (log/log-event! :trace (log/log-msg "Requesting access token from" access-token-uri "with payload" payload))
 
     (try (let [{:keys [status body]} (http-client/post access-token-uri payload {:throw-exceptions false})]
-           (log/log-event! :debug (log/log-msg "Received reply from" access-token-uri ":" status body))
+           (log/log-event! :trace (log/log-msg "Received reply from" access-token-uri ":" status body))
            (case status
              200 (let [json-map (json/read-str body :key-fn csk/->kebab-case-keyword)]
                    (format-access-token json-map))
@@ -417,12 +417,13 @@
       (let [user-info-uri (lens/yank openid-profile (lens/>> openid/openid-profile-openid-provider-config
                                                               openid/openid-provider-config-userinfo-endpoint))
             payload       {:headers {:authorization (str token-type " " token)}}]
-        (log/log-event! :debug (log/log-msg "Requesting user info from" user-info-uri "with payload" payload))
+        (log/log-event! :trace (log/log-msg "Requesting user info from" user-info-uri "with payload" payload))
         (try
           (let [{:keys [status body]} (http-client/get user-info-uri payload)]
-            (log/log-event! :debug (log/log-msg "Received response from " user-info-uri ":" status body))
+            (log/log-event! :trace (log/log-msg "Received response from " user-info-uri ":" status body))
             (case status
               200 (let [user-data (json/read-str body :key-fn csk/->kebab-case-keyword)]
+                    (log/log-event! :debug (log/log-msg "Fetched user info:" user-data))
                     (make-user-info (:id user-data)
                                     (:username user-data)
                                     (:name user-data)
@@ -473,7 +474,7 @@
                      error-handler   default-error-handler}}]]
   (fn [handler]
     (fn [request]
-      (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: request" request))
+      (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: request" request))
       (try
         (cond
           (re-matches (re-pattern (str "^" logout-endpoint)) (or (:uri request) ""))
@@ -519,6 +520,7 @@
                           (unauthorized-state))
                       (let [user-info-map (user-info-lens {} user-info)
                             req-with-auth (authorized-state request user-info-map)]
+                        (log/log-event! :info (log/log-msg "Successfully logged in user" user-info))
                         (-> (handler req-with-auth)
                             (authorized-state user-info-map)))))))))
 
