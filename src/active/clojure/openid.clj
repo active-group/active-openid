@@ -532,8 +532,11 @@
           (error-handler request (.getMessage e) e))))))
 
 (defn wrap-openid-session
-  [handler]
-  (let [session-store  (ring-session-memory/memory-store)
+  "Our implementation uses sessions, so we need [[ring-session/wrap-session]] middleware.
+  This is a convenience wrapper around [[ring-session/wrap-session]] that sets
+  some useful defaults and optionally accepts and uses a given `session-store`."
+  [handler & [session-store]]
+  (let [session-store  (or session-store (ring-session-memory/memory-store))
         session-config (-> (:session ring-defaults/site-defaults)
                            (assoc :store session-store)
                            (assoc :cookie-name "active-openid-session")
@@ -542,14 +545,22 @@
         (ring-session/wrap-session session-config))))
 
 (defn wrap-openid-authentication
-  "Middleware stack for OpenID authentication.
-  See [[wrap-openid-authentication*]]"
-  [config & args]
+  "Convencience middleware stack for OpenID authentication that combines all
+  other middlewares that its implementation depends on.
+
+  Currently, this is [[ring-session/wrap-session]].  To avoid having more than
+  one instance of the `session-store`, bind one instance of this middleware to a
+  variable and use the variable if you need this middleware in different places
+  use optional argument `:session-store` to pass in your global session store.
+
+  See [[wrap-openid-authentication*]] for OpenID-specific documentation and
+  options."
+  [config & [{:keys [session-store]} :as args]]
   (let [wrap-openid-auth (apply wrap-openid-authentication* config args)]
     (fn [handler]
       (-> handler
           wrap-openid-auth
-          wrap-openid-session))))
+          (wrap-openid-session session-store)))))
 
 (defn request-user-info
   [request]
