@@ -45,6 +45,35 @@ Use ~active.clojure.openid/user-info-from-request~ to obtain information about
 the logged-in user in your handlers from the current request.
 
 See [[./example]] for details.
+
+* Authorization Code Flow
+This library implements OpenID's [Authorization Code
+Flow](https://tools.ietf.org/html/rfc6749#section-4.1).  This works for regular
+web apps and server-side apps where the source code is not publicly exposed.
+The exchange must happen server-side because during this exchange the server
+must also pass along your application's Client Secret, which must always be kept
+secure.
+
+This also works for single-page applications when we guard the route that serves
+the application since the authentication then happens not in the application
+itself but beforehand on the server side.  So we are fine.
+
+When we serve a single-page application without such a guard, this library is
+not sufficient.  Then we need to implement [Authorization Code Flow with Proof
+Key for Code Exchange (PKCE)](https://tools.ietf.org/html/rfc7636) _in the
+client_, so we need to implement it in ClojureScript.  For that we should
+abstract a lot of the code in this library that takes care of building and
+parsing the various requests and replies into ~cljc~ namespaces that we can then
+use in both Clojure- and ClojureScript-specific implementations.  Of course,
+doing the actual requests will differ.  But this could probably also be
+abstracted with a monadic implementation with different monad runners.
+
+Here are some useful links:
+
+- https://auth0.com/docs/authenticate/login/oidc-conformant-authentication/oidc-adoption-access-tokens#custom-claims
+- https://auth0.com/docs/get-started/authentication-and-authorization-flow/authorization-code-flow
+- https://auth0.com/docs/get-started/authentication-and-authorization-flow/authorization-code-flow-with-proof-key-for-code-exchange-pkce
+
 * Development
 For your convenience, this project includes a minimal [[./shell.nix][shell.nix]] file.
 Just run
@@ -75,12 +104,9 @@ environment variables
 Copyright © 2022-2023 Active Group GmbH
 
 Distributed under the Eclipse Public License either version 2.0 or (at your option) any later version. [[file:LICENSE.org][(see LICENSE)]]
-* TODO [1/4]
+* TODO [1/3]
 Some of the todos for this project.
 - [X] Browser based authentication
-- [ ] PCKS for Azur?
-  https://auth0.com/docs/authenticate/login/oidc-conformant-authentication/oidc-adoption-auth-code-flow#code-exchange-request-authorization-code-flow-with-pkce
-  https://learn.microsoft.com/en-us/azure/active-directory/develop/scenario-spa-app-registration#redirect-uri-msaljs-20-with-auth-code-flow
 - [ ] [[https://openid.net/specs/openid-connect-backchannel-1_0.html][Backchannel logout]]
 - [ ] =check_session_iframe=.  Included in discovered endpoints and
   therefore usable.  In the future, some direct support (maybe a
