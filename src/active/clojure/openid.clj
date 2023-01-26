@@ -360,49 +360,49 @@
          (codec/form-encode {:post_logout_redirect_uri (absolute-redirect-uri openid-profile logout-endpoint)
                              :id_token_hint            id-token-hint}))))
 
-(def authorization-started-lens
-  (lens/>> :session ::authorization-started))
+(def authentication-started-lens
+  (lens/>> :session ::authentication-started))
 
-(def authorized-lens
-  (lens/>> :session ::authorized))
+(def authenticated-lens
+  (lens/>> :session ::authenticated))
 
-(defn authorization-started-state
+(defn authentication-started-state
   ([request]
-   (authorization-started-lens request))
+   (authentication-started-lens request))
   ([request payload]
    (-> request
-       (authorization-started-lens payload)
-       (authorized-lens nil))))
+       (authentication-started-lens payload)
+       (authenticated-lens nil))))
 
-(defn authorized-state
+(defn authenticated-state
   ([request]
-   (authorized-lens request))
+   (authenticated-lens request))
   ([request payload]
    (-> request
-       (authorized-lens payload)
-       (authorization-started-lens nil))))
+       (authenticated-lens payload)
+       (authentication-started-lens nil))))
 
-(defn unauthorized-state
+(defn unauthenticated-state
   ([request & _]
    (-> request
-       (authorization-started-lens nil)
-       (authorized-lens nil))))
+       (authentication-started-lens nil)
+       (authenticated-lens nil))))
 
-(defn unauthorized-state?
+(defn unauthenticated-state?
   [request]
-  (or (and (nil? (authorized-state request))
-           (nil? (authorization-started-state request)))
-      (and (nil? (authorized-state request))
-           (and (some? (authorization-started-state request))
+  (or (and (nil? (authenticated-state request))
+           (nil? (authentication-started-state request)))
+      (and (nil? (authenticated-state request))
+           (and (some? (authentication-started-state request))
                 (nil? (get-session-state request))))))
 
-(defn authorization-started-state?
+(defn authentication-started-state?
   [request]
-  (some? (authorization-started-state request)))
+  (some? (authentication-started-state request)))
 
-(defn authorized-state?
+(defn authenticated-state?
   [request]
-  (some? (authorized-state request)))
+  (some? (authenticated-state request)))
 
 (define-record-type NoUserInfo
   make-no-user-info
@@ -441,15 +441,15 @@
   "Middleware that shortcuts execution of the `handler` and redirects the user
   to the login page.
 
-  It also takes care of the openid authentication process states `unauthorized`,
-  `authorization started`, `authorized`.
+  It also takes care of the openid authentication process states `unauthenticated`,
+  `authentication started`, `authenticated`.
 
-  The state `authorization started` is the most complicated one: There, the
+  The state `authentication started` is the most complicated one: There, the
   middleware tries to obtain tokens and user data from the IDP and needs to
   validate the data.
 
   - `:login-handler`: Handler that the middleware calls if currently
-  unauthorized.  The login handler should display links to IDPs to start the
+  unauthenticated.  The login handler should display links to IDPs to start the
   authentication process.  The login handler gets called with three arguments:
      - `request`: The current request
      - `availables`: List of [[Available]] IDPs
@@ -482,53 +482,53 @@
           (do
             (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: logout-endpoint, removing stored credentials"))
             (-> (response/redirect "/")
-                (unauthorized-state)))
+                (unauthenticated-state)))
 
-          (unauthorized-state? request)
+          (unauthenticated-state? request)
           (do
-            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthorized"))
+            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated"))
             (let [logins (logins-from-config! config (:uri request))]
-              (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthorized, calling login handler for" (pr-str logins)))
+              (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated, calling login handler for" (pr-str logins)))
               (-> (login-handler request (logins-availables logins) (logins-unavailables logins))
-                  (authorization-started-state (logins-state-profile-edn logins)))))
+                  (authentication-started-state (logins-state-profile-edn logins)))))
 
             ;; this is the request that comes from the IDP
-          (authorization-started-state? request)
+          (authentication-started-state? request)
           (let [state-from-idp (get-session-state request)
-                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authorization started, got state from IDP" state-from-idp))
-                state-profile-edn (authorization-started-state request)
-                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authorization started, found state-profile-edn" state-profile-edn))
+                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authentication started, got state from IDP" state-from-idp))
+                state-profile-edn (authentication-started-state request)
+                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authentication started, found state-profile-edn" state-profile-edn))
                 openid-profile-edn (get state-profile-edn state-from-idp)
-                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authorization started, trying to authorize with openid profile" openid-profile-edn))]
+                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authentication started, trying to authorize with openid profile" openid-profile-edn))]
             (cond
               (nil? openid-profile-edn)
               (-> (error-handler request "The state we got from IDP did not match our's.")
-                  (unauthorized-state))
+                  (unauthenticated-state))
 
               (nil? (get-authorization-code request))
               (-> (error-handler request "The authorization code from the IDP is missing.")
-                  (unauthorized-state))
+                  (unauthenticated-state))
 
               :else
               (let [openid-profile (openid-profile-lens openid-profile-edn)
                     access-token (fetch-access-token! openid-profile (get-authorization-code request) (:uri request))]
                 (if (no-access-token? access-token)
                   (-> (error-handler request (str "Got no access token - " (no-access-token-error-message access-token)))
-                      (unauthorized-state))
+                      (unauthenticated-state))
                   (let [user-info (fetch-user-info openid-profile access-token logout-endpoint)]
                     (if (no-user-info? user-info)
                       (-> (error-handler request (str "Got no user info - " (no-user-info-error-message user-info)))
-                          (unauthorized-state))
+                          (unauthenticated-state))
                       (let [user-info-edn (user-info-lens {} user-info)
-                            req-with-auth (authorized-state request user-info-edn)]
+                            req-with-auth (authenticated-state request user-info-edn)]
                         (log/log-event! :info (log/log-msg "Successfully logged in user" user-info))
                         (-> (handler req-with-auth)
-                            (authorized-state user-info-edn)))))))))
+                            (authenticated-state user-info-edn)))))))))
 
-          (authorized-state? request)
+          (authenticated-state? request)
           ;; FIXME: consider validity here, maybe refresh token https://auth0.com/docs/authenticate/login/oidc-conformant-authentication/oidc-adoption-refresh-tokens
           (do
-            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: already authorized, handling request" request))
+            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: already authenticated, handling request" request))
             (handler request)))
         (catch Exception e
           (log/log-exception-event! :error (log/log-msg "wrap-ensure-authenticated: caught exception" (.getMessage e) request) e)
@@ -569,7 +569,7 @@
   "Retrieve [[UserInfo]] for logged in user from `request`.
   Use this function in your handler to obtain information about your user."
   [request]
-  (let [user-info-edn (authorized-state request)]
+  (let [user-info-edn (authenticated-state request)]
     (if user-info-edn
       (user-info-lens user-info-edn)
       nil)))
