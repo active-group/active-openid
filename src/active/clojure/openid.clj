@@ -113,8 +113,8 @@
   (try (let [{:keys [status body]} (http-client/get provider-config-uri {:throw-exceptions false})]
          (log/log-event! :trace (log/log-msg "Received reply from" provider-config-uri ":" status body))
          (case status
-           200 (let [json-map (json/read-str body :key-fn csk/->kebab-case-keyword)]
-                 (openid-provider-config-lens json-map))
+           200 (let [json-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
+                 (openid-provider-config-lens json-edn))
            (make-openid-instance-not-available provider-name provider-config-uri (str status " " body))))
        (catch Exception e
          (log/log-exception-event! :error (log/log-msg "Received exception from" provider-config-uri ":" (.getMessage e)) e)
@@ -160,7 +160,7 @@
 (define-record-type Logins
   make-logins
   logins?
-  [state-profile-map logins-state-profile-map
+  [state-profile-edn logins-state-profile-edn
    availables logins-availables
    unavailables logins-unavailables])
 
@@ -210,14 +210,14 @@
   (let [openid-profiles (make-openid-profiles! config)
         available-profiles (filter openid-profile? openid-profiles)
         unavailable-profiles (remove openid-profile? openid-profiles)
-        state-profile-map (into {} (mapv (fn [openid-profile]
+        state-profile-edn (into {} (mapv (fn [openid-profile]
                                            [(random-state) (openid-profile-lens {} openid-profile)])
                                          available-profiles))]
-    (make-logins (if (empty? state-profile-map) nil state-profile-map)
-                 (mapv (fn [[state _openid-profile-map] openid-profile]
+    (make-logins (if (empty? state-profile-edn) nil state-profile-edn)
+                 (mapv (fn [[state _openid-profile-edn] openid-profile]
                          (make-available-login (authorize-uri openid-profile state redirect-uri)
                                                (openid-profile-name openid-profile)))
-                       state-profile-map available-profiles)
+                       state-profile-edn available-profiles)
                  (mapv (fn [openid-instance-not-available] (make-unavailable-login (openid-instance-not-available-name openid-instance-not-available)
                                                                                    (openid-instance-not-available-error-msg openid-instance-not-available)))
                        unavailable-profiles))))
@@ -291,8 +291,8 @@
     (try (let [{:keys [status body]} (http-client/post access-token-uri payload {:throw-exceptions false})]
            (log/log-event! :trace (log/log-msg "Received reply from" access-token-uri ":" status body))
            (case status
-             200 (let [json-map (json/read-str body :key-fn csk/->kebab-case-keyword)]
-                   (format-access-token json-map))
+             200 (let [json-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
+                   (format-access-token json-edn))
              (make-no-access-token (str status " " body))))
          (catch Exception e
            (log/log-exception-event! :error (log/log-msg "Received exception from" access-token-uri ":" (.getMessage e)) e)
@@ -489,18 +489,18 @@
             (let [logins (logins-from-config! config (:uri request))]
               (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthorized, calling login handler for" (pr-str logins)))
               (-> (login-handler request (logins-availables logins) (logins-unavailables logins))
-                  (authorization-started-state (logins-state-profile-map logins)))))
+                  (authorization-started-state (logins-state-profile-edn logins)))))
 
             ;; this is the request that comes from the IDP
           (authorization-started-state? request)
           (let [state-from-idp (get-session-state request)
                 _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authorization started, got state from IDP" state-from-idp))
-                state-profile-map (authorization-started-state request)
-                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authorization started, found state-profile-map" state-profile-map))
-                openid-profile-map (get state-profile-map state-from-idp)
-                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authorization started, trying to authorize with openid profile" openid-profile-map))]
+                state-profile-edn (authorization-started-state request)
+                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authorization started, found state-profile-edn" state-profile-edn))
+                openid-profile-edn (get state-profile-edn state-from-idp)
+                _ (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authorization started, trying to authorize with openid profile" openid-profile-edn))]
             (cond
-              (nil? openid-profile-map)
+              (nil? openid-profile-edn)
               (-> (error-handler request "The state we got from IDP did not match our's.")
                   (unauthorized-state))
 
@@ -509,20 +509,20 @@
                   (unauthorized-state))
 
               :else
-              (let [openid-profile (openid-profile-lens openid-profile-map)
+              (let [openid-profile (openid-profile-lens openid-profile-edn)
                     access-token (fetch-access-token! openid-profile (get-authorization-code request) (:uri request))]
                 (if (no-access-token? access-token)
                   (-> (error-handler request (str "Got no access token - " (no-access-token-error-message access-token)))
                       (unauthorized-state))
                   (let [user-info (fetch-user-info openid-profile access-token logout-endpoint)]
                     (if (no-user-info? user-info)
-                      (-> (error-handler request (str "Got no user info - " (no-user-info-error-message access-token)))
+                      (-> (error-handler request (str "Got no user info - " (no-user-info-error-message user-info)))
                           (unauthorized-state))
-                      (let [user-info-map (user-info-lens {} user-info)
-                            req-with-auth (authorized-state request user-info-map)]
+                      (let [user-info-edn (user-info-lens {} user-info)
+                            req-with-auth (authorized-state request user-info-edn)]
                         (log/log-event! :info (log/log-msg "Successfully logged in user" user-info))
                         (-> (handler req-with-auth)
-                            (authorized-state user-info-map)))))))))
+                            (authorized-state user-info-edn)))))))))
 
           (authorized-state? request)
           ;; FIXME: consider validity here, maybe refresh token https://auth0.com/docs/authenticate/login/oidc-conformant-authentication/oidc-adoption-refresh-tokens
@@ -566,7 +566,7 @@
 
 (defn request-user-info
   [request]
-  (let [user-info-map (authorized-state request)]
-    (if user-info-map
-      (user-info-lens user-info-map)
+  (let [user-info-edn (authorized-state request)]
+    (if user-info-edn
+      (user-info-lens user-info-edn)
       nil)))
