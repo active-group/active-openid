@@ -86,16 +86,17 @@
   {:projection-lens user-info-projection-lens}
   make-user-info
   user-info?
-  [id user-info-id
-   login user-info-login
+  [username user-info-username
    name user-info-name
+   email user-info-email
    rest user-info-rest
    openid-profile user-info-openid-profile
    logout-uri user-info-logout-uri
    access-token user-info-access-token])
 
 (def user-info-lens
-  (user-info-projection-lens :id :login :name :rest
+  (user-info-projection-lens :username :name :email
+                             :rest
                              (lens/>> :openid-profile openid-profile-lens)
                              :logout-uri
                              (lens/>> :access-token access-token-lens)))
@@ -423,10 +424,10 @@
             (log/log-event! :trace (log/log-msg "Received response from " user-info-uri ":" status body))
             (case status
               200 (let [user-data (json/read-str body :key-fn csk/->kebab-case-keyword)]
-                    (log/log-event! :debug (log/log-msg "Fetched user info:" user-data))
-                    (make-user-info (:id user-data)
-                                    (:username user-data)
+                    (log/log-event! :debug (log/log-msg "Received user info:" user-data))
+                    (make-user-info (:preferred-username user-data)
                                     (:name user-data)
+                                    (:email user-data)
                                     user-data
                                     openid-profile
                                     (logout-uri openid-profile id-token logout-endpoint)
