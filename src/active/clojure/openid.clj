@@ -565,7 +565,9 @@
           wrap-openid-auth
           (wrap-openid-session session-store)))))
 
-(defn request-user-info
+(defn user-info-from-request
+  "Retrieve [[UserInfo]] for logged in user from `request`.
+  Use this function in your handler to obtain information about your user."
   [request]
   (let [user-info-edn (authorized-state request)]
     (if user-info-edn

@@ -11,7 +11,7 @@
 
 (defn application
   [req]
-  (let [user-info (openid/request-user-info req)]
+  (let [user-info (openid/user-info-from-request req)]
     {:status 200
      :headers {"Content-Type" "text/html"}
      :body
@@ -20,16 +20,20 @@
       [:body
        [:main
         [:div
-         [:h1 "Logged in!"]
-         [:h2 "session"]
-         [:code (pr-str (:session req))]]
-        [:div
-         [:h2 "user info"]
-         [:code (pr-str user-info)]]
-        (when user-info
-          [:div
-           [:h2 "logout"]
-           [:a {:href (openid/user-info-logout-uri user-info)} "Logout"]])]])}))
+         (if user-info
+           [:div
+            [:h1 "Hello " (or (openid/user-info-name user-info) (openid/user-info-username user-info)) "!"]
+            [:p "You are logged in."]
+            [:h2 "logout"]
+            [:a {:href (openid/user-info-logout-uri user-info)} "Logout"]
+            [:h3 "user info debugging:"]
+            [:code (pr-str user-info)]]
+           [:div
+            ;; Note that this should never be shown since the middleware
+            ;; supersecedes unauthenticated state with the login page.
+            [:h1 "You are not logged in."]])
+         [:h3 "session debugging:"]
+         [:code (pr-str (:session req))]]]])}))
 
 (defn app
   [config]
