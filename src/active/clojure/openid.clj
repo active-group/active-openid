@@ -47,8 +47,7 @@
    client-id              openid-profile-client-id
    client-secret          openid-profile-client-secret
    scopes                 openid-profile-scopes
-   base-uri               openid-profile-base-uri
-   basic-auth?            openid-profile-basic-auth?])
+   base-uri               openid-profile-base-uri])
 
 (def openid-profile-lens
   (openid-profile-projection-lens :name
@@ -57,8 +56,7 @@
                                   :client-id
                                   :client-secret
                                   :scopes
-                                  :base-uri
-                                  :basic-auth?))
+                                  :base-uri))
 
 (define-record-type OpenidInstanceNotAvailable
   make-openid-instance-not-available openid-instance-not-available?
@@ -139,8 +137,7 @@
                            (active-config/access openid-config openid-config/openid-client-id openid-config/openid-client-section)
                            (active-config/access openid-config openid-config/openid-client-secret openid-config/openid-client-section)
                            (active-config/access openid-config openid-config/openid-client-scopes openid-config/openid-client-section)
-                           (active-config/access openid-config openid-config/openid-client-base-uri openid-config/openid-client-section)
-                           (active-config/access openid-config openid-config/openid-client-basic-auth? openid-config/openid-client-section))
+                           (active-config/access openid-config openid-config/openid-client-base-uri openid-config/openid-client-section))
 
       (openid-instance-not-available? provider-config-or-error)
       provider-config-or-error)))
@@ -244,10 +241,6 @@
   [request]
   (get (parse-params request) "state"))
 
-(defn add-header-credentials
-  [options client-id client-secret]
-  (assoc options :basic-auth [client-id client-secret]))
-
 (defn add-form-credentials
   [options client-id client-secret]
   (assoc options :form-params (-> (:form-params options)
@@ -281,12 +274,10 @@
                                                             openid-provider-config-token-endpoint))
         client-id        (openid-profile-client-id openid-profile)
         client-secret    (openid-profile-client-secret openid-profile)
-        basic-auth?      (openid-profile-basic-auth? openid-profile)
-        payload          (cond-> {:form-params {:grant_type   "authorization_code"
-                                                :code         authorization-code
-                                                :redirect_uri (absolute-redirect-uri openid-profile redirect-uri)}}
-                           basic-auth?       (add-header-credentials client-id client-secret)
-                           (not basic-auth?) (add-form-credentials client-id client-secret))]
+        payload          (add-form-credentials {:form-params {:grant_type   "authorization_code"
+                                                              :code         authorization-code
+                                                              :redirect_uri (absolute-redirect-uri openid-profile redirect-uri)}}
+                                               client-id client-secret)]
     (log/log-event! :trace (log/log-msg "Requesting access token from" access-token-uri "with payload" payload))
 
     (try (let [{:keys [status body]} (http-client/post access-token-uri payload {:throw-exceptions false})]

@@ -48,12 +48,6 @@
    "The scopes to fetch from the idp."
    (config/sequence-of-range config/string-range)))
 
-(def openid-client-basic-auth?
-  (config/setting
-   :basic-auth?
-   "???"
-   (config/boolean-range false)))
-
 (def openid-client-base-uri
   (config/setting
    :base-uri
@@ -65,8 +59,7 @@
                  openid-client-id
                  openid-client-secret
                  openid-client-scopes
-                 openid-client-base-uri
-                 openid-client-basic-auth?))
+                 openid-client-base-uri))
 
 (def openid-client-section
   (config/section :client openid-client-schema))

@@ -5,5 +5,4 @@
   :client    {:id     "active-openid-example-client"
               :secret "nbgj02Mt0kon32ObnmyubLYkSXTu6IhB"
               :scopes ["openid"]
-              :base-uri "http://localhost:1414"
-              :basic-auth? false}}]}
+              :base-uri "http://localhost:1414"}}]}
