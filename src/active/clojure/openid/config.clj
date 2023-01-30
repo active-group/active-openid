@@ -69,10 +69,10 @@
 
 (def openid-profiles-section
   (config/section
-    :openid-profiles
-    openid-profiles-schema))
+   :openid-profiles
+   openid-profiles-schema))
 
 (def openid-schema
   (config/schema
-    "Configuration schema for active-openid."
-    openid-profiles-section))
+   "Configuration schema for active-openid."
+   openid-profiles-section))
