@@ -476,10 +476,11 @@
           (unauthenticated-state? request)
           (do
             (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated"))
-            (let [logins (logins-from-config! config (:uri request))]
+            (let [original-uri (:uri request)
+                  logins (logins-from-config! config original-uri)]
               (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: unauthenticated, calling login handler for" (pr-str logins)))
               (-> (login-handler request (logins-availables logins) (logins-unavailables logins))
-                  (authentication-started-state (logins-state-profile-edn logins)))))
+                  (authentication-started-state [(logins-state-profile-edn logins) original-uri]))))
 
           ;; this is the request that comes from the IDP
           (authentication-started-state? request)
@@ -487,8 +488,9 @@
             (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authentication-started"))
             (let [state-from-idp (get-session-state request)
                   _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, got state from IDP" state-from-idp))
-                  state-profile-edn (authentication-started-state request)
+                  [state-profile-edn original-uri] (authentication-started-state request)
                   _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, found state-profile-edn" state-profile-edn))
+                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, found original uri" original-uri))
                   openid-profile-edn (get state-profile-edn state-from-idp)
                   _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, trying to authorize with openid profile" openid-profile-edn))]
               (cond
@@ -502,7 +504,7 @@
 
                 :else
                 (let [openid-profile (openid-profile-lens openid-profile-edn)
-                      access-token (fetch-access-token! openid-profile (get-authorization-code request) (:uri request))]
+                      access-token (fetch-access-token! openid-profile (get-authorization-code request) original-uri)]
                   (if (no-access-token? access-token)
                     (-> (error-handler request (str "Got no access token - " (no-access-token-error-message access-token)))
                         (unauthenticated-state))
@@ -515,10 +517,9 @@
 
                           (do
                             (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: got user-info" (pr-str user-info)))
-                            (let [user-info-edn (user-info-lens {} user-info)
-                                  req-with-auth (authenticated-state request user-info-edn)]
+                            (let [user-info-edn (user-info-lens {} user-info)]
                               (log/log-event! :info (log/log-msg "Successfully logged in user" (user-info-username user-info)))
-                              (-> (handler req-with-auth)
+                              (-> (response/redirect original-uri)
                                   (authenticated-state user-info-edn))))))))))))
 
           (authenticated-state? request)
