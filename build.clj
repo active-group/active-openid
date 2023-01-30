@@ -3,34 +3,56 @@
             [clojure.tools.deps.cli.api :as cli]
             [deps-deploy.deps-deploy    :as dd]))
 
+
+(def -version [0 1 (b/git-count-revs nil)])
+
+(let [[major minor patch] -version]
+  (def release-version (format "%s.%s.%s" major minor patch))
+  (def snapshot-version (format "%s.%s.%s-SNAPSHOT" major (inc minor) 0)))
+
 (def lib 'de.active-group/active-openid)
-(def version (format "0.1.%s" (b/git-count-revs nil)))
 (def class-dir "target/classes")
 (def basis (b/create-basis {:project "deps.edn"}))
-(def jar-file (format "target/%s-%s.jar" (name lib) version))
+
+(defn jar-file
+  [version]
+  (format "target/%s-%s.jar" (name lib) version))
 
 (defn clean [_]
   (b/delete {:path "target"}))
 
 (def git-scm-url (b/git-process {:git-args "config --get remote.origin.url"}))
 
-(defn jar [_]
-  (b/write-pom {:class-dir class-dir
-                :lib       lib
-                :version   version
-                :basis     basis
-                :src-dirs  ["src"]
-                :scm       {:url git-scm-url}})
-  (b/copy-dir {:src-dirs   ["src" "resources"]
-               :target-dir class-dir})
-  (b/jar {:class-dir class-dir
-          :jar-file  jar-file}))
+(defn build-jar!
+  [version]
+  (let [jar-file (jar-file version)]
+    (b/write-pom {:class-dir class-dir
+                  :lib       lib
+                  :version   version
+                  :basis     basis
+                  :src-dirs  ["src"]
+                  :scm       {:url git-scm-url}})
+    (b/copy-dir {:src-dirs   ["src" "resources"]
+                 :target-dir class-dir})
+    (b/jar {:class-dir class-dir
+            :jar-file  jar-file})
+    jar-file))
 
-(defn deploy [_]
+(defn jar [_]
+  (build-jar! release-version))
+
+(defn deploy!
+  [version]
   (dd/deploy {:installer :remote
-              :artifact  jar-file
+              :artifact  (build-jar! version)
               :pom-file  (b/pom-path {:lib       lib
                                       :class-dir class-dir})}))
 
-(defn install [_]
-  (cli/mvn-install {:jar jar-file}))
+(defn deploy [_]
+  (deploy! release-version))
+
+(defn deploy-snapshot [_]
+  (deploy! snapshot-version))
+
+(defn install-snapshot [_]
+  (cli/mvn-install (build-jar! snapshot-version)))

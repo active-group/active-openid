@@ -1,13 +1,21 @@
-.PHONY: build deploy test install
-
-build:
-	clojure -T:active-openid/build jar
-
-deploy: build
-	clojure -T:active-openid/build deploy
+.PHONY: test jar deploy snapshot install deploy-snapshot
 
 test:
 	clojure -X:active-openid/test
 
-install: build
-	clojure -T:active-openid/build install
+
+jar:
+	clojure -T:active-openid/build jar
+
+deploy:
+	clojure -T:active-openid/build deploy
+
+
+snapshot:
+  clojure -T:active-openid/build snapshot
+
+install:
+	clojure -T:active-openid/build install-snapshot
+
+deploy-snapshot:
+	clojure -T:active-openid/build deploy-snapshot
