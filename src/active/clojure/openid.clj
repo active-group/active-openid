@@ -297,17 +297,17 @@
    :headers {"Content-Type" "text/html"}
    :body
    (hp/html5
-     [:head [:meta {:charset "UTF-8"}]]
-     [:body
-      [:main
-       [:div
-        [:h1 "Error:"]
-        [:code error-string]
-        [:h1 "Session:"]
-        [:code (:session request)]
-        [:h1 "Exception:"]
-        (when exception
-          [:code (pr-str exception)])]]])})
+    [:head [:meta {:charset "UTF-8"}]]
+    [:body
+     [:main
+      [:div
+       [:h1 "Error:"]
+       [:code error-string]
+       [:h1 "Session:"]
+       [:code (:session request)]
+       [:h1 "Exception:"]
+       (when exception
+         [:code (pr-str exception)])]]])})
 
 (defn render-available-login
   [available-login]
@@ -325,17 +325,17 @@
               :headers {"Content-Type" "text/html"}
               :body
               (hp/html5
-                [:head [:meta {:charset "UTF-8"}]]
-                [:body
-                 [:main
-                  [:div
-                   [:h1 "Login:"]
-                   [:h2 "available identity providers:"]
-                   [:ul (for [x (mapv render-available-login availables)]
-                          [:li x])]
-                   [:h2 "unavailable identity providers:"]
-                   [:ul (for [x (mapv render-unavailable-login unavailables)]
-                          [:li x])]]]])}]
+               [:head [:meta {:charset "UTF-8"}]]
+               [:body
+                [:main
+                 [:div
+                  [:h1 "Login:"]
+                  [:h2 "available identity providers:"]
+                  [:ul (for [x (mapv render-available-login availables)]
+                         [:li x])]
+                  [:h2 "unavailable identity providers:"]
+                  [:ul (for [x (mapv render-unavailable-login unavailables)]
+                         [:li x])]]]])}]
     resp))
 
 (def default-logout-endpoint "/logout")
@@ -406,7 +406,7 @@
         id-token (access-token-id-token access-token)]
     (when token
       (let [user-info-uri (lens/yank openid-profile (lens/>> openid/openid-profile-openid-provider-config
-                                                              openid/openid-provider-config-userinfo-endpoint))
+                                                             openid/openid-provider-config-userinfo-endpoint))
             payload       {:headers {:authorization (str token-type " " token)}}]
         (log/log-event! :trace (log/log-msg "Requesting user info from" user-info-uri "with payload" payload))
         (try
@@ -482,7 +482,7 @@
               (-> (login-handler request (logins-availables logins) (logins-unavailables logins))
                   (authentication-started-state (logins-state-profile-edn logins)))))
 
-            ;; this is the request that comes from the IDP
+          ;; this is the request that comes from the IDP
           (authentication-started-state? request)
           (do
             (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authentication-started"))
