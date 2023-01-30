@@ -549,9 +549,15 @@
   other middlewares that its implementation depends on.
 
   Currently, this is [[ring-session/wrap-session]].  To avoid having more than
-  one instance of the `session-store`, bind one instance of this middleware to a
-  variable and use the variable if you need this middleware in different places
-  use optional argument `:session-store` to pass in your global session store.
+  one instance of the `session-store`, you have three options:
+
+  - Use optional argument `:session-store` to pass in your global session store.
+
+  - Bind one instance of this middleware to a variable and use the variable if
+    you need this middleware in different places.
+
+  - Put your own [[ring-session/wrap-session]] in your middleware stack and use
+    [[wrap-openid-authentication*]] instead of this middleware.
 
   See [[wrap-openid-authentication*]] for OpenID-specific documentation and
   options."
