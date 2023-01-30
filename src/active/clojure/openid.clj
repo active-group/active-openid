@@ -457,12 +457,12 @@
      - and optionaly an `exception`
   Defaults to [[default-error-handler]].
   "
-  [config & [{:keys [login-handler
-                     logout-endpoint
-                     error-handler]
-              :or   {login-handler          default-login-handler
-                     logout-endpoint        default-logout-endpoint
-                     error-handler   default-error-handler}}]]
+  [config & {:keys [login-handler
+                    logout-endpoint
+                    error-handler]
+             :or   {login-handler          default-login-handler
+                    logout-endpoint        default-logout-endpoint
+                    error-handler   default-error-handler}}]
   (fn [handler]
     (fn [request]
       (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: request" request))
@@ -555,9 +555,9 @@
 
   See [[wrap-openid-authentication*]] for OpenID-specific documentation and
   options."
-  [config & [{:keys [session-store]} :as args]]
-  (let [wrap-openid-auth (apply wrap-openid-authentication* config args)]
-    (fn [handler]
+  [config & {:keys [session-store] :as args}]
+  (let [wrap-openid-auth (wrap-openid-authentication* config args)]
+    (fn [handler] ;; FIXME: add & args to the parameter-list here, because of reitit
       (-> handler
           wrap-openid-auth
           (wrap-openid-session session-store)))))
