@@ -1,4 +1,4 @@
-.PHONY: build deploy test
+.PHONY: build deploy test install
 
 build:
 	clojure -T:active-openid/build jar
