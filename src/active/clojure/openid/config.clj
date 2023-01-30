@@ -15,17 +15,10 @@
    "The .well-known configuration uri of the openid provider."
    config/string-range))
 
-(def openid-provider-uri-prefix
-  (config/setting
-   :uri-prefix
-   "A prefix, which will be prepended to the callback-uris."
-   (config/default-string-range "")))
-
 (def openid-provider-schema
   (config/schema "The openid provider schema"
                  openid-provider-name
-                 openid-provider-config-uri
-                 openid-provider-uri-prefix))
+                 openid-provider-config-uri))
 
 (def openid-provider-section
   (config/section :provider openid-provider-schema))
