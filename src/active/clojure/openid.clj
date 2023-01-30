@@ -150,7 +150,6 @@
   [config]
   (mapv make-openid-profile! (active-config/section-subconfig config openid-config/openid-profiles-section)))
 
-
 ;; logins
 
 (define-record-type Logins
@@ -545,7 +544,7 @@
         (ring-session/wrap-session session-config))))
 
 (defn wrap-openid-authentication
-  "Convencience middleware stack for OpenID authentication that combines all
+  "Convenience middleware stack for OpenID authentication that combines all
   other middlewares that its implementation depends on.
 
   Currently, this is [[ring-session/wrap-session]].  To avoid having more than
