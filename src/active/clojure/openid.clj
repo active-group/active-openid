@@ -302,7 +302,7 @@
 ;; default handler for middleware
 
 (defn default-error-handler
-  [request error-string & [exception]]
+  [request error-string original-uri & [exception]]
   {:status 500
    :headers {"Content-Type" "text/html"}
    :body
@@ -313,6 +313,7 @@
       [:div
        [:h1 "Error:"]
        [:code error-string]
+       (when original-uri [:a {:href original-uri} "try again"])
        [:h1 "Session:"]
        [:code (:session request)]
        [:h1 "Exception:"]
@@ -464,14 +465,16 @@
   unexpected error.  The error handler gets called with these arguments:
      - `request`: The current request
      - `error-string`: A string that describes the error
-     - and optionaly an `exception`
+     - `original-uri`: The URI of the original request, useful to try request
+       again
+     - and optionally an `exception`
   Defaults to [[default-error-handler]].
   "
   [config & {:keys [login-handler
                     logout-endpoint
                     error-handler]
-             :or   {login-handler          default-login-handler
-                    logout-endpoint        default-logout-endpoint
+             :or   {login-handler   default-login-handler
+                    logout-endpoint default-logout-endpoint
                     error-handler   default-error-handler}}]
   (fn [handler]
     (fn [request]
@@ -505,11 +508,11 @@
                   _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, trying to authorize with profile and uri" profile-uri-edn))]
               (cond
                 (nil? profile-uri-edn)
-                (-> (error-handler request "The state we got from IDP did not match our's.")
+                (-> (error-handler request "The state we got from IDP did not match our's." nil)
                     (unauthenticated-state))
 
                 (nil? (get-authorization-code request))
-                (-> (error-handler request "The authorization code from the IDP is missing.")
+                (-> (error-handler request "The authorization code from the IDP is missing." nil)
                     (unauthenticated-state))
 
                 :else
@@ -518,13 +521,13 @@
                       original-uri (profile-uri-uri profile-uri)
                       access-token (fetch-access-token! openid-profile (get-authorization-code request) original-uri)]
                   (if (no-access-token? access-token)
-                    (-> (error-handler request (str "Got no access token - " (no-access-token-error-message access-token)))
+                    (-> (error-handler request (str "Got no access token - " (no-access-token-error-message access-token)) original-uri)
                         (unauthenticated-state))
                     (do
                       (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: got access-token" (pr-str access-token)))
                       (let [user-info (fetch-user-info openid-profile access-token logout-endpoint)]
                         (if (no-user-info? user-info)
-                          (-> (error-handler request (str "Got no user info - " (no-user-info-error-message user-info)))
+                          (-> (error-handler request (str "Got no user info - " (no-user-info-error-message user-info)) original-uri)
                               (unauthenticated-state))
 
                           (do
