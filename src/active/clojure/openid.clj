@@ -340,6 +340,10 @@
 
 (def default-logout-endpoint "/logout")
 
+(defn default-logout-handler
+  [_request]
+  (response/redirect "/"))
+
 (defn logout-uri
   [openid-profile id-token-hint logout-endpoint]
   (let [end-session-endpoint
@@ -440,6 +444,10 @@
   user-initated logout.  This is needed to remove the auth information from the
   session.  Defaults to [[default-logout-endpoint]].
 
+  - `:logout-handler`: The handler for the logout endpoint above.  It gets
+  called with `request`.  Defaults to [[default-logout-handler]] which redirects
+  to `/`.
+
   - `:error-handler`: Handler thet the middleware calls in case of some
   unexpected error.  The error handler gets called with these arguments:
      - `request`: The current request
@@ -451,9 +459,11 @@
   "
   [config & {:keys [login-handler
                     logout-endpoint
+                    logout-handler
                     error-handler]
              :or   {login-handler   default-login-handler
                     logout-endpoint default-logout-endpoint
+                    logout-handler   default-logout-handler
                     error-handler   default-error-handler}}]
   (fn [handler]
     (fn [request]
@@ -463,7 +473,7 @@
           (re-matches (re-pattern (str "^" logout-endpoint)) (or (:uri request) ""))
           (do
             (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: logout-endpoint, removing stored credentials"))
-            (-> (response/redirect "/")
+            (-> (logout-handler request)
                 (state (unauthenticated))))
 
           (unauthenticated-request? request)
