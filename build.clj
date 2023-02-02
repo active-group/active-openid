@@ -55,4 +55,4 @@
   (deploy! snapshot-version))
 
 (defn install-snapshot [_]
-  (cli/mvn-install (build-jar! snapshot-version)))
+  (cli/mvn-install {:jar (build-jar! snapshot-version)}))
