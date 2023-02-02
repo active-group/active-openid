@@ -6,6 +6,7 @@
             [active.clojure.record :refer [define-record-type]]
             [active.clojure.logger.event :as log]
             [clj-http.client :as http-client]
+            [clj-jwt.core :as jwt]
             [clj-time.core :as time]
             [clj-time.coerce :as time-coerce]
             [camel-snake-kebab.core :as csk]
@@ -393,7 +394,10 @@
   no-user-info?
   [error-message no-user-info-error-message])
 
-(defn fetch-user-info
+(defn fetch-user-info!
+  "This fetches user info with another request to user-info endpoint.
+  Not clear, if we need that, for now we use the user-info from the JWT
+  of the access-token, see [[fetch-user-info]]."
   [openid-profile access-token logout-endpoint]
   (let [token (access-token-token access-token)
         token-type (access-token-type access-token)
@@ -420,6 +424,26 @@
           (catch Exception e
             (log/log-exception-event! :error (log/log-msg "Received exception from" user-info-uri ":" (.getMessage e)) e)
             (make-no-user-info (.getMessage e))))))))
+
+(defn fetch-user-info
+  "This decodes user-info from the JWT of the access-token."
+  [openid-profile access-token logout-endpoint]
+  (let [token (access-token-token access-token)
+        id-token (access-token-id-token access-token)]
+    (try
+      (let [jwt (jwt/str->jwt token)
+            claims (:claims jwt)]
+        (log/log-event! :trace (log/log-msg "Decoded JWT from access-token:" jwt))
+        (make-user-info (:unique_name claims)
+                        (:name claims)
+                        (get claims :email "FIXME")
+                        jwt
+                        openid-profile
+                        (logout-uri openid-profile id-token logout-endpoint)
+                        access-token))
+      (catch Exception e
+            (log/log-exception-event! :error (log/log-msg "Exception from decoding JWT access-token" (pr-str access-token) ":" (.getMessage e)) e)
+            (make-no-user-info (.getMessage e))))))
 
 (defn wrap-openid-authentication*
   "Middleware that shortcuts execution of the `handler` and redirects the user
