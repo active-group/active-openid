@@ -200,25 +200,14 @@
       (string/replace "+" "-")
       (string/replace "/" "_")))
 
-(define-record-type ProfileUri
-  {:projection-lens profile-uri-projection-lens}
-  make-profile-uri
-  profile-uri?
-  [profile profile-uri-profile
-   uri profile-uri-uri])
-
-(def profile-uri-lens
-  (profile-uri-projection-lens (lens/>> :profile openid-profile-lens) :uri))
-
 (defn logins-from-config!
   [config redirect-uri]
   (let [openid-profiles (make-openid-profiles! config)
         available-profiles (filter openid-profile? openid-profiles)
-        profile-uris (mapv #(make-profile-uri % redirect-uri) available-profiles)
         unavailable-profiles (remove openid-profile? openid-profiles)
-        state-profile-map (into {} (mapv (fn [profile-uri]
-                                           [(random-state) (profile-uri-lens {} profile-uri)])
-                                         profile-uris))]
+        state-profile-map (into {} (mapv (fn [openid-profile]
+                                           [(random-state) (openid-profile-lens {} openid-profile)])
+                                         available-profiles))]
     (make-logins (if (empty? state-profile-map) nil state-profile-map)
                  (mapv (fn [[state _openid-profile-edn] openid-profile]
                          (make-available-login (authorize-uri openid-profile state redirect-uri)
@@ -361,49 +350,39 @@
          (codec/form-encode {:post_logout_redirect_uri (absolute-redirect-uri openid-profile logout-endpoint)
                              :id_token_hint            id-token-hint}))))
 
-(def authentication-started-lens
-  (lens/>> :session ::authentication-started))
+(def state
+  (lens/>> :session ::auth-state))
 
-(def authenticated-lens
-  (lens/>> :session ::authenticated))
+(define-record-type Authenticated
+  authenticated
+  authenticated?
+  [user-info authenticated-user-info])
 
-(defn authentication-started-state
-  ([request]
-   (authentication-started-lens request))
-  ([request payload]
-   (-> request
-       (authentication-started-lens payload)
-       (authenticated-lens nil))))
-
-(defn authenticated-state
-  ([request]
-   (authenticated-lens request))
-  ([request payload]
-   (-> request
-       (authenticated-lens payload)
-       (authentication-started-lens nil))))
-
-(defn unauthenticated-state
-  ([request & _]
-   (-> request
-       (authentication-started-lens nil)
-       (authenticated-lens nil))))
-
-(defn unauthenticated-state?
+(defn authenticated-request?
   [request]
-  (or (and (nil? (authenticated-state request))
-           (nil? (authentication-started-state request)))
-      (and (nil? (authenticated-state request))
-           (and (some? (authentication-started-state request))
-                (nil? (get-session-state request))))))
+  (authenticated? (state request)))
 
-(defn authentication-started-state?
-  [request]
-  (some? (authentication-started-state request)))
+(define-record-type AuthenticationStarted
+  authentication-started
+  authentication-started?
+  [state-profile-map authentication-started-state-profile-map
+   original-uri authentication-started-original-uri])
 
-(defn authenticated-state?
+(defn authentication-started-request?
   [request]
-  (some? (authenticated-state request)))
+  (authentication-started? (state request)))
+
+(define-record-type Unauthenticated
+  unauthenticated
+  unauthenticated?
+  [])
+
+(defn unauthenticated-request?
+  [request]
+  (or (nil? (state request))
+      (unauthenticated? (state request))
+      #_(and (authentication-started? (state request))
+           (nil? (get-session-state request)))))
 
 (define-record-type NoUserInfo
   make-no-user-info
@@ -485,62 +464,63 @@
           (do
             (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: logout-endpoint, removing stored credentials"))
             (-> (response/redirect "/")
-                (unauthenticated-state)))
+                (state (unauthenticated))))
 
-          (unauthenticated-state? request)
+          (unauthenticated-request? request)
           (do
-            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated"))
+            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated" (pr-str (state request))))
             (let [original-uri (:uri request)
                   logins (logins-from-config! config original-uri)]
               (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: unauthenticated, calling login handler for" (pr-str logins)))
               (-> (login-handler request (logins-availables logins) (logins-unavailables logins))
-                  (authentication-started-state (logins-state-profile-map logins)))))
+                  (state (authentication-started (logins-state-profile-map logins) original-uri)))))
 
           ;; this is the request that comes from the IDP
-          (authentication-started-state? request)
+          (authentication-started-request? request)
           (do
-            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authentication-started"))
+            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authentication-started" (pr-str (state request))))
             (let [state-from-idp (get-session-state request)
                   _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, got state from IDP" state-from-idp))
-                  state-profile-map (authentication-started-state request)
+                  authentication-started (state request)
+                  original-uri (authentication-started-original-uri authentication-started)
+                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, found original uri" original-uri))
+                  state-profile-map (authentication-started-state-profile-map authentication-started)
                   _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, found state-profile-edn" state-profile-map))
-                  profile-uri-edn (get state-profile-map state-from-idp)
-                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, trying to authorize with profile and uri" profile-uri-edn))]
+                  openid-profile-edn (get state-profile-map state-from-idp)
+                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, trying to authorize with profile" openid-profile-edn))]
               (cond
-                (nil? profile-uri-edn)
-                (-> (error-handler request "The state we got from IDP did not match our's." nil)
-                    (unauthenticated-state))
+                (nil? openid-profile-edn)
+                (-> (error-handler request "The state we got from IDP did not match our's." original-uri)
+                    (state (unauthenticated)))
 
                 (nil? (get-authorization-code request))
-                (-> (error-handler request "The authorization code from the IDP is missing." nil)
-                    (unauthenticated-state))
+                (-> (error-handler request "The authorization code from the IDP is missing." original-uri)
+                    (state (unauthenticated)))
 
                 :else
-                (let [profile-uri (profile-uri-lens profile-uri-edn)
-                      openid-profile (profile-uri-profile profile-uri)
-                      original-uri (profile-uri-uri profile-uri)
+                (let [openid-profile (openid-profile-lens openid-profile-edn)
                       access-token (fetch-access-token! openid-profile (get-authorization-code request) original-uri)]
                   (if (no-access-token? access-token)
                     (-> (error-handler request (str "Got no access token - " (no-access-token-error-message access-token)) original-uri)
-                        (unauthenticated-state))
+                        (state (unauthenticated)))
                     (do
                       (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: got access-token" (pr-str access-token)))
                       (let [user-info (fetch-user-info openid-profile access-token logout-endpoint)]
                         (if (no-user-info? user-info)
                           (-> (error-handler request (str "Got no user info - " (no-user-info-error-message user-info)) original-uri)
-                              (unauthenticated-state))
+                              (state (unauthenticated)))
 
                           (do
                             (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: got user-info" (pr-str user-info)))
                             (let [user-info-edn (user-info-lens {} user-info)]
                               (log/log-event! :info (log/log-msg "Successfully logged in user" (user-info-username user-info)))
                               (-> (response/redirect original-uri)
-                                  (authenticated-state user-info-edn))))))))))))
+                                  (state (authenticated user-info-edn)))))))))))))
 
-          (authenticated-state? request)
+          (authenticated-request? request)
           ;; FIXME: consider validity here, maybe refresh token https://auth0.com/docs/authenticate/login/oidc-conformant-authentication/oidc-adoption-refresh-tokens
           (do
-            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: already authenticated, handling request" request))
+            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: already authenticated " (pr-str (state request)) ", handling request" request))
             (handler request)))
         (catch Exception e
           (log/log-exception-event! :error (log/log-msg "wrap-ensure-authenticated: caught exception" (.getMessage e) request) e)
@@ -587,7 +567,8 @@
   "Retrieve [[UserInfo]] for logged in user from `request`.
   Use this function in your handler to obtain information about your user."
   [request]
-  (let [user-info-edn (authenticated-state request)]
+  (let [state (state request)
+        user-info-edn (and (authenticated? state) (authenticated-user-info state))]
     (if user-info-edn
       (user-info-lens user-info-edn)
       nil)))
