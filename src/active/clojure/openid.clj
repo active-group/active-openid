@@ -155,7 +155,7 @@
 (define-record-type Logins
   make-logins
   logins?
-  [state-profile-edn logins-state-profile-edn
+  [state-profile-map logins-state-profile-map
    availables logins-availables
    unavailables logins-unavailables])
 
@@ -200,19 +200,30 @@
       (string/replace "+" "-")
       (string/replace "/" "_")))
 
+(define-record-type ProfileUri
+  {:projection-lens profile-uri-projection-lens}
+  make-profile-uri
+  profile-uri?
+  [profile profile-uri-profile
+   uri profile-uri-uri])
+
+(def profile-uri-lens
+  (profile-uri-projection-lens (lens/>> :profile openid-profile-lens) :uri))
+
 (defn logins-from-config!
   [config redirect-uri]
   (let [openid-profiles (make-openid-profiles! config)
         available-profiles (filter openid-profile? openid-profiles)
+        profile-uris (mapv #(make-profile-uri % redirect-uri) available-profiles)
         unavailable-profiles (remove openid-profile? openid-profiles)
-        state-profile-edn (into {} (mapv (fn [openid-profile]
-                                           [(random-state) (openid-profile-lens {} openid-profile)])
-                                         available-profiles))]
-    (make-logins (if (empty? state-profile-edn) nil state-profile-edn)
+        state-profile-map (into {} (mapv (fn [profile-uri]
+                                           [(random-state) (profile-uri-lens {} profile-uri)])
+                                         profile-uris))]
+    (make-logins (if (empty? state-profile-map) nil state-profile-map)
                  (mapv (fn [[state _openid-profile-edn] openid-profile]
                          (make-available-login (authorize-uri openid-profile state redirect-uri)
                                                (openid-profile-name openid-profile)))
-                       state-profile-edn available-profiles)
+                       state-profile-map available-profiles)
                  (mapv (fn [openid-instance-not-available] (make-unavailable-login (openid-instance-not-available-name openid-instance-not-available)
                                                                                    (openid-instance-not-available-error-msg openid-instance-not-available)))
                        unavailable-profiles))))
@@ -480,7 +491,7 @@
                   logins (logins-from-config! config original-uri)]
               (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: unauthenticated, calling login handler for" (pr-str logins)))
               (-> (login-handler request (logins-availables logins) (logins-unavailables logins))
-                  (authentication-started-state [(logins-state-profile-edn logins) original-uri]))))
+                  (authentication-started-state (logins-state-profile-map logins)))))
 
           ;; this is the request that comes from the IDP
           (authentication-started-state? request)
@@ -488,13 +499,12 @@
             (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authentication-started"))
             (let [state-from-idp (get-session-state request)
                   _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, got state from IDP" state-from-idp))
-                  [state-profile-edn original-uri] (authentication-started-state request)
-                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, found state-profile-edn" state-profile-edn))
-                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, found original uri" original-uri))
-                  openid-profile-edn (get state-profile-edn state-from-idp)
-                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, trying to authorize with openid profile" openid-profile-edn))]
+                  state-profile-map (authentication-started-state request)
+                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, found state-profile-edn" state-profile-map))
+                  profile-uri-edn (get state-profile-map state-from-idp)
+                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, trying to authorize with profile and uri" profile-uri-edn))]
               (cond
-                (nil? openid-profile-edn)
+                (nil? profile-uri-edn)
                 (-> (error-handler request "The state we got from IDP did not match our's.")
                     (unauthenticated-state))
 
@@ -503,7 +513,9 @@
                     (unauthenticated-state))
 
                 :else
-                (let [openid-profile (openid-profile-lens openid-profile-edn)
+                (let [profile-uri (profile-uri-lens profile-uri-edn)
+                      openid-profile (profile-uri-profile profile-uri)
+                      original-uri (profile-uri-uri profile-uri)
                       access-token (fetch-access-token! openid-profile (get-authorization-code request) original-uri)]
                   (if (no-access-token? access-token)
                     (-> (error-handler request (str "Got no access token - " (no-access-token-error-message access-token)))
