@@ -40,7 +40,13 @@
   (rr/ring-handler
     (rr/router
       [["/" {:get {:handler application}}]
-       [["/deep/link/" {:get {:handler application}}]]]
+       ["/deep/link/" {:get {:handler application}}]
+       ;; FIXME: if we do not list this route here, it will not be processed by
+       ;; the openid middleware at all since the default handler one level above
+       ;; will catch it.  Talk to Marco about this.
+       ;; If we add openid middleware to toplevel, browser requests to `favicon`
+       ;; will interfere with session states.
+       ["/logout" {:get {:handler application}}]]
       {:data {:middleware [(openid/wrap-openid-authentication config)]}})
     (rr/create-default-handler)))
 
