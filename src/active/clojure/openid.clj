@@ -385,7 +385,7 @@
   [request]
   (or (nil? (state request))
       (unauthenticated? (state request))
-      #_(and (authentication-started? (state request))
+      (and (authentication-started? (state request))
            (nil? (get-session-state request)))))
 
 (define-record-type NoUserInfo
