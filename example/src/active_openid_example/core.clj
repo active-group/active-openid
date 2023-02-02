@@ -40,9 +40,9 @@
   (rr/ring-handler
     (rr/router
       [["/" {:get {:handler application}}]
-       [["/deep/link/" {:get {:handler application}}]]])
-    (rr/create-default-handler)
-    {:middleware [(openid/wrap-openid-authentication config)]}))
+       [["/deep/link/" {:get {:handler application}}]]]
+      {:data {:middleware [(openid/wrap-openid-authentication config)]}})
+    (rr/create-default-handler)))
 
 (defonce server (atom nil))
 
