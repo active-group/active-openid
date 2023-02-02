@@ -312,13 +312,13 @@
      [:main
       [:div
        [:h1 "Error:"]
-       [:code error-string]
-       (when original-uri [:a {:href original-uri} "try again"])
+       [:div [:code error-string]]
+       [:div (when original-uri [:a {:href original-uri} "try again"])]
        [:h1 "Session:"]
-       [:code (:session request)]
+       [:div [:code (:session request)]]
        [:h1 "Exception:"]
        (when exception
-         [:code (pr-str exception)])]]])})
+         [:div [:code (pr-str exception)]])]]])})
 
 (defn render-available-login
   [available-login]
