@@ -47,6 +47,7 @@
    client-secret          openid-profile-client-secret
    scopes                 openid-profile-scopes
    base-uri               openid-profile-base-uri
+   user-info-from         openid-profile-user-info-from
    http-client-opts-map   openid-profile-http-client-opts-map])
 
 (def openid-profile-lens
@@ -56,6 +57,7 @@
                                   :client-secret
                                   :scopes
                                   :base-uri
+                                  :user-info-from
                                   :http-client-opts-map))
 
 (define-record-type OpenidInstanceNotAvailable
@@ -139,6 +141,7 @@
                            (active-config/access openid-config openid-config/openid-client-secret openid-config/openid-client-section)
                            (active-config/access openid-config openid-config/openid-client-scopes openid-config/openid-client-section)
                            (active-config/access openid-config openid-config/openid-client-base-uri openid-config/openid-client-section)
+                           (active-config/access openid-config openid-config/openid-client-user-info-from openid-config/openid-client-section)
                            http-client-opts-map)
 
       (openid-instance-not-available? provider-config-or-error)
@@ -400,8 +403,7 @@
 
 (defn fetch-user-info!
   "This fetches user info with another request to user-info endpoint.
-  Not clear, if we need that, for now we use the user-info from the JWT
-  of the access-token, see [[fetch-user-info]]."
+  See configuration setting [[openid-config/openid-client-user-info-from]]."
   [openid-profile access-token logout-endpoint]
   (let [token (access-token-token access-token)
         token-type (access-token-type access-token)
@@ -431,7 +433,8 @@
             (make-no-user-info (.getMessage e))))))))
 
 (defn fetch-user-info
-  "This decodes user-info from the JWT of the access-token."
+  "This decodes user-info from the JWT of the access-token.
+  See configuration setting [[openid-config/openid-client-user-info-from]]."
   [openid-profile access-token logout-endpoint]
   (let [token (access-token-token access-token)
         id-token (access-token-id-token access-token)]
@@ -544,7 +547,10 @@
                         (state (unauthenticated)))
                     (do
                       (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: got access-token" (pr-str access-token)))
-                      (let [user-info (fetch-user-info openid-profile access-token logout-endpoint)]
+                      (let [user-info-fetcher (case (openid-profile-user-info-from openid-profile)
+                                                :jwt fetch-user-info
+                                                :endpoint fetch-user-info!)
+                            user-info (user-info-fetcher openid-profile access-token logout-endpoint)]
                         (if (no-user-info? user-info)
                           (-> (error-handler request (str "Got no user info - " (no-user-info-error-message user-info)) original-uri)
                               (state (unauthenticated)))

@@ -47,12 +47,22 @@
    "The base (root) uri of the application using active-openid."
    config/string-range))
 
+(def openid-client-user-info-from
+  (config/setting
+   :user-info-from
+   "Where to get the user info from:
+    - `:jwt` gets it from the access token's JWT (default)
+    - `:endpoint` uses a HTTP request to get it from the
+      IDP's user info endpoint."
+   (config/one-of-range #{:jwt :endpoint} :jwt)))
+
 (def openid-client-schema
   (config/schema "The openid client schema."
                  openid-client-id
                  openid-client-secret
                  openid-client-scopes
-                 openid-client-base-uri))
+                 openid-client-base-uri
+                 openid-client-user-info-from))
 
 (def openid-client-section
   (config/section :client openid-client-schema))
