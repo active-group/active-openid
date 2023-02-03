@@ -1,7 +1,7 @@
 {:openid-profiles
  [{:provider {:name       "keycloak"
               :config-uri "http://localhost:8080/realms/active-openid-example-realm/.well-known/openid-configuration"}
-  :client    {:id     "active-openid-example-client"
+   :client   {:id     "active-openid-example-client"
               :secret "nbgj02Mt0kon32ObnmyubLYkSXTu6IhB"
               :scopes ["openid"]
               :base-uri "http://localhost:1414"}}]}
