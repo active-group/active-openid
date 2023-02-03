@@ -1,7 +1,6 @@
 (ns active.clojure.openid
   (:require [active.clojure.config :as active-config]
             [active.clojure.lens :as lens]
-            [active.clojure.openid :as openid]
             [active.clojure.openid.config :as openid-config]
             [active.clojure.record :refer [define-record-type]]
             [active.clojure.logger.event :as log]
@@ -47,7 +46,8 @@
    client-id              openid-profile-client-id
    client-secret          openid-profile-client-secret
    scopes                 openid-profile-scopes
-   base-uri               openid-profile-base-uri])
+   base-uri               openid-profile-base-uri
+   http-client-opts-map   openid-profile-http-client-opts-map])
 
 (def openid-profile-lens
   (openid-profile-projection-lens :name
@@ -55,7 +55,8 @@
                                   :client-id
                                   :client-secret
                                   :scopes
-                                  :base-uri))
+                                  :base-uri
+                                  :http-client-opts-map))
 
 (define-record-type OpenidInstanceNotAvailable
   make-openid-instance-not-available openid-instance-not-available?
@@ -106,9 +107,9 @@
 
   ;; If the openid instance is not available, returns
   ;; an [[%openid-instance-not-available]]] condition.
-  [provider-name provider-config-uri]
-  (log/log-event! :trace (log/log-msg "Requesting openid provider config for" provider-name "from" provider-config-uri))
-  (try (let [{:keys [status body]} (http-client/get provider-config-uri {:throw-exceptions false})]
+  [provider-name provider-config-uri http-client-opts-map]
+  (log/log-event! :trace (log/log-msg "Requesting openid provider config for" provider-name "from" provider-config-uri (when http-client-opts-map (str "with " http-client-opts-map))))
+  (try (let [{:keys [status body]} (http-client/get provider-config-uri (merge {:throw-exceptions false} http-client-opts-map))]
          (log/log-event! :trace (log/log-msg "Received reply from" provider-config-uri ":" status body))
          (case status
            200 (let [provider-config-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
@@ -124,11 +125,12 @@
   [openid-config]
   (let [provider-name (active-config/access openid-config openid-config/openid-provider-name openid-config/openid-provider-section)
         provider-config-uri (active-config/access openid-config openid-config/openid-provider-config-uri openid-config/openid-provider-section)
+        http-client-opts-map (active-config/access openid-config openid-config/openid-proxy-section)
         ;; This might fail Also, this might be a bad idea:
         ;; TODO If the identity provider is unavailable at
         ;; startup, there is no recovery.
         provider-config-or-error
-        (get-openid-provider-config! provider-name provider-config-uri)]
+        (get-openid-provider-config! provider-name provider-config-uri http-client-opts-map)]
     (cond
       (openid-provider-config? provider-config-or-error)
       (make-openid-profile provider-name
@@ -136,7 +138,8 @@
                            (active-config/access openid-config openid-config/openid-client-id openid-config/openid-client-section)
                            (active-config/access openid-config openid-config/openid-client-secret openid-config/openid-client-section)
                            (active-config/access openid-config openid-config/openid-client-scopes openid-config/openid-client-section)
-                           (active-config/access openid-config openid-config/openid-client-base-uri openid-config/openid-client-section))
+                           (active-config/access openid-config openid-config/openid-client-base-uri openid-config/openid-client-section)
+                           http-client-opts-map)
 
       (openid-instance-not-available? provider-config-or-error)
       provider-config-or-error)))
@@ -275,10 +278,11 @@
         payload          (add-form-credentials {:form-params {:grant_type   "authorization_code"
                                                               :code         authorization-code
                                                               :redirect_uri (absolute-redirect-uri openid-profile redirect-uri)}}
-                                               client-id client-secret)]
-    (log/log-event! :trace (log/log-msg "Requesting access token from" access-token-uri "with payload" payload))
+                                               client-id client-secret)
+        http-client-opts-map (openid-profile-http-client-opts-map openid-profile)]
+    (log/log-event! :trace (log/log-msg "Requesting access token from" access-token-uri "with payload" payload (when http-client-opts-map (str "with " http-client-opts-map))))
 
-    (try (let [{:keys [status body]} (http-client/post access-token-uri payload {:throw-exceptions false})]
+    (try (let [{:keys [status body]} (http-client/post access-token-uri (merge payload {:throw-exceptions false} http-client-opts-map))]
            (log/log-event! :trace (log/log-msg "Received reply from" access-token-uri ":" status body))
            (case status
              200 (let [access-token-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
@@ -318,7 +322,7 @@
 (defn render-unavailable-login
   [unavailable-login]
   [:span (unavailable-login-name unavailable-login)
-   (str "(" (unavailable-login-error unavailable-login) ")")])
+   (str " (" (unavailable-login-error unavailable-login) ")")])
 
 (defn default-login-handler
   [_req availables unavailables]
@@ -403,12 +407,13 @@
         token-type (access-token-type access-token)
         id-token (access-token-id-token access-token)]
     (when token
-      (let [user-info-uri (lens/yank openid-profile (lens/>> openid/openid-profile-openid-provider-config
-                                                             openid/openid-provider-config-userinfo-endpoint))
+      (let [user-info-uri (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
+                                                             openid-provider-config-userinfo-endpoint))
+            http-client-opts-map (lens/yank openid-profile openid-profile-http-client-opts-map)
             payload       {:headers {:authorization (str token-type " " token)}}]
-        (log/log-event! :trace (log/log-msg "Requesting user info from" user-info-uri "with payload" payload))
+        (log/log-event! :trace (log/log-msg "Requesting user info from" user-info-uri "with payload" payload (when http-client-opts-map (str "with " http-client-opts-map))))
         (try
-          (let [{:keys [status body]} (http-client/get user-info-uri payload)]
+          (let [{:keys [status body]} (http-client/get user-info-uri (merge payload {:throw-exceptions false} http-client-opts-map))]
             (log/log-event! :trace (log/log-msg "Received response from " user-info-uri ":" status body))
             (case status
               200 (let [user-data-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]

@@ -57,10 +57,58 @@
 (def openid-client-section
   (config/section :client openid-client-schema))
 
+(def openid-proxy-host
+  (config/setting
+   :proxy-host
+   "Proxy host."
+   (config/optional-range config/string-range)))
+
+(def openid-proxy-port
+  (config/setting
+   :proxy-port
+   "Proxy port."
+   (config/optional-range (config/integer-between-range 0 65534 3128))))
+
+(def openid-proxy-user
+  (config/setting
+   :proxy-user
+   "Proxy user."
+   (config/optional-range config/string-range)))
+
+(def openid-proxy-pass
+  (config/setting
+   :proxy-pass
+   "Proxy password."
+   (config/optional-range config/string-range)))
+
+(def openid-proxy-ignore-hosts
+  (config/setting
+    :proxy-ignore-hosts
+    "List of hosts for what proxy settings should be ignored."
+    (config/optional-range (config/sequence-of-range config/string-range))))
+
+(def openid-proxy-schema
+  (config/schema
+    "Schema for proxy settings.
+    Modelled on puropse after `http-client`'s proxy settings
+    https://github.com/dakrone/clj-http#proxies to be able to pass them on
+    easily.  This needs to be addressed if client or format changes."
+    openid-proxy-host
+    openid-proxy-port
+    openid-proxy-user
+    openid-proxy-pass
+    openid-proxy-ignore-hosts))
+
+(def openid-proxy-section
+  (config/section
+    :proxy
+    openid-proxy-schema))
+
 (def openid-profile-schema
   (config/schema "Configuration schema for the openid connect configuration."
                  openid-provider-section
-                 openid-client-section))
+                 openid-client-section
+                 openid-proxy-section))
 
 (def openid-profiles-schema
   (config/sequence-schema
