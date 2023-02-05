@@ -284,7 +284,6 @@
                                                client-id client-secret)
         http-client-opts-map (openid-profile-http-client-opts-map openid-profile)]
     (log/log-event! :trace (log/log-msg "Requesting access token from" access-token-uri "with payload" payload (when http-client-opts-map (str "with " http-client-opts-map))))
-
     (try (let [{:keys [status body]} (http-client/post access-token-uri (merge payload {:throw-exceptions false} http-client-opts-map))]
            (log/log-event! :trace (log/log-msg "Received reply from" access-token-uri ":" status body))
            (case status
@@ -444,7 +443,7 @@
         (log/log-event! :trace (log/log-msg "Decoded JWT from access-token:" jwt))
         (make-user-info (:unique_name claims)
                         (:name claims)
-                        (get claims :email "FIXME")
+                        (get claims :email)
                         jwt
                         openid-profile
                         (logout-uri openid-profile id-token logout-endpoint)
