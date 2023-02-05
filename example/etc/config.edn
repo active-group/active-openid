@@ -4,4 +4,5 @@
    :client   {:id     "active-openid-example-client"
               :secret "nbgj02Mt0kon32ObnmyubLYkSXTu6IhB"
               :scopes ["openid"]
-              :base-uri "http://localhost:1414"}}]}
+              :base-uri "http://localhost:1414"
+              :user-info-from :jwt}}]}
