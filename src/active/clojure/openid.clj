@@ -245,12 +245,6 @@
   [request]
   (get (parse-params request) "state"))
 
-(defn add-form-credentials
-  [options client-id client-secret]
-  (assoc options :form-params (-> (:form-params options)
-                                  (merge {:client_id     client-id
-                                          :client_secret client-secret}))))
-
 (define-record-type NoAccessToken
   make-no-access-token
   no-access-token?
@@ -278,10 +272,11 @@
                                                             openid-provider-config-token-endpoint))
         client-id        (openid-profile-client-id openid-profile)
         client-secret    (openid-profile-client-secret openid-profile)
-        payload          (add-form-credentials {:form-params {:grant_type   "authorization_code"
-                                                              :code         authorization-code
-                                                              :redirect_uri (absolute-redirect-uri openid-profile redirect-uri)}}
-                                               client-id client-secret)
+        payload          {:form-params {:grant_type   "authorization_code"
+                                        :code         authorization-code
+                                        :redirect_uri (absolute-redirect-uri openid-profile redirect-uri)
+                                        :client_id     client-id
+                                        :client_secret client-secret}}
         http-client-opts-map (openid-profile-http-client-opts-map openid-profile)]
     (log/log-event! :trace (log/log-msg "Requesting access token from" access-token-uri "with payload" payload (when http-client-opts-map (str "with " http-client-opts-map))))
     (try (let [{:keys [status body]} (http-client/post access-token-uri (merge payload {:throw-exceptions false} http-client-opts-map))]
