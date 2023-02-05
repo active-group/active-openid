@@ -569,14 +569,15 @@
   "Our implementation uses sessions, so we need [[ring-session/wrap-session]] middleware.
   This is a convenience wrapper around [[ring-session/wrap-session]] that sets
   some useful defaults and optionally accepts and uses a given `session-store`."
-  [handler & [session-store]]
+  [& [session-store]]
   (let [session-store  (or session-store (ring-session-memory/memory-store))
         session-config (-> (:session ring-defaults/site-defaults)
                            (assoc :store session-store)
                            (assoc :cookie-name "active-openid-session")
                            (assoc-in [:cookie-attrs :same-site] :lax))]
-    (-> handler
-        (ring-session/wrap-session session-config))))
+    (fn [handler]
+      (-> handler
+          (ring-session/wrap-session session-config)))))
 
 (defn wrap-openid-authentication
   "Convenience middleware stack for OpenID authentication that combines all
@@ -596,11 +597,12 @@
   See [[wrap-openid-authentication*]] for OpenID-specific documentation and
   options."
   [config & {:keys [session-store] :as args}]
-  (let [wrap-openid-auth (wrap-openid-authentication* config args)]
+  (let [the-openid-auth (wrap-openid-authentication* config args)
+        the-openid-session (wrap-openid-session session-store)]
     (fn [handler] ;; FIXME: add & args to the parameter-list here, because of reitit
       (-> handler
-          wrap-openid-auth
-          (wrap-openid-session session-store)))))
+          the-openid-auth
+          the-openid-session))))
 
 (defn user-info-from-request
   "Retrieve [[UserInfo]] for logged in user from `request`.
