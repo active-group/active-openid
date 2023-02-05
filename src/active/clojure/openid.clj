@@ -346,16 +346,6 @@
   [_request]
   (response/redirect "/"))
 
-(defn logout-uri
-  [openid-profile id-token-hint logout-endpoint]
-  (let [end-session-endpoint
-        (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
-                                           openid-provider-config-end-session-endpoint))]
-    (str end-session-endpoint
-         "?"
-         (codec/form-encode {:post_logout_redirect_uri (absolute-redirect-uri openid-profile logout-endpoint)
-                             :id_token_hint            id-token-hint}))))
-
 (def state
   (lens/>> :session ::auth-state))
 
@@ -390,6 +380,79 @@
       (and (authentication-started? (state request))
            (nil? (get-session-state request)))))
 
+(define-record-type LogoutSuccessful
+  make-logout-successful
+  logout-successful?
+  [])
+
+(define-record-type LogoutFailed
+  make-logout-failed
+  logout-failed?
+  [error logout-failed-error])
+
+(declare user-info-from-request)
+
+(defn post-logout!
+  [request logout-endpoint]
+  (if-let [user-info (user-info-from-request request)]
+    (let [openid-profile (user-info-openid-profile user-info)
+          access-token (user-info-access-token user-info)
+          id-token-hint (access-token-id-token access-token)
+          end-session-endpoint
+          (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
+                                             openid-provider-config-end-session-endpoint))
+          post-logout-redirect-uri (absolute-redirect-uri openid-profile logout-endpoint)
+          payload {:form-params {:post_logout_redirect_uri post-logout-redirect-uri
+                                 :id_token_hint            id-token-hint}}
+          http-client-opts-map (openid-profile-http-client-opts-map openid-profile)]
+      (log/log-event! :trace (log/log-msg "Requesting logout from" end-session-endpoint "with payload" payload (when http-client-opts-map (str "with " http-client-opts-map))))
+      (try (let [{:keys [status body headers]} (http-client/post end-session-endpoint (merge payload {:throw-exceptions false} http-client-opts-map))]
+             (log/log-event! :trace (log/log-msg "Received reply from" end-session-endpoint ":" status body))
+             (case status
+               200 (do
+                     (log/log-event! :debug (log/log-msg "Logout successful" end-session-endpoint))
+                     (make-logout-successful))
+               302 (let [redirect-to (get headers "Location")]
+                     (log/log-event! :debug (log/log-msg "Logout successful with redirect to" redirect-to))
+                     (if (= redirect-to post-logout-redirect-uri)
+                       (make-logout-successful)
+                       (make-logout-failed (str status (str " redirect to unexpected " redirect-to " instead of " post-logout-redirect-uri)))))
+               (make-logout-failed (str status " " body))))
+           (catch Exception e
+             (log/log-exception-event! :error (log/log-msg "Received exception from" end-session-endpoint ":" (.getMessage e)) e)
+             (make-logout-failed (.getMessage e)))))
+    (make-logout-failed "Not logged in")))
+
+(defn logout-uri-post
+  [openid-profile _id-token-hint logout-endpoint]
+  (absolute-redirect-uri openid-profile logout-endpoint))
+
+(defn logout-handler-post
+  [logout-handler logout-endpoint error-handler request]
+  (let [result (post-logout! request logout-endpoint)]
+    (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: logout-endpoint, logout result" (pr-str result)))
+    (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: logout-endpoint, removing credentials"))
+    (-> (if (logout-failed? result)
+          (error-handler request (logout-failed-error result) "/")
+          (logout-handler request))
+        (state (unauthenticated)))))
+
+(defn logout-uri-get
+  [openid-profile id-token-hint logout-endpoint]
+  (let [end-session-endpoint
+        (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
+                                           openid-provider-config-end-session-endpoint))]
+    (str end-session-endpoint
+         "?"
+         (codec/form-encode {:post_logout_redirect_uri (absolute-redirect-uri openid-profile logout-endpoint)
+                             :id_token_hint            id-token-hint}))))
+
+(defn logout-handler-get
+  [logout-handler _logout-endpoint _error-handler request]
+  (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: logout-endpoint, removing stored credentials"))
+  (-> (logout-handler request)
+      (state (unauthenticated))))
+
 (define-record-type NoUserInfo
   make-no-user-info
   no-user-info?
@@ -419,7 +482,7 @@
                                     (:email user-data-edn)
                                     user-data-edn
                                     openid-profile
-                                    (logout-uri openid-profile id-token logout-endpoint)
+                                    (logout-uri-post openid-profile id-token logout-endpoint)
                                     access-token))
               (make-no-user-info (str status " " body))))
           (catch Exception e
@@ -441,7 +504,7 @@
                         (get claims :email)
                         jwt
                         openid-profile
-                        (logout-uri openid-profile id-token logout-endpoint)
+                        (logout-uri-post openid-profile id-token logout-endpoint)
                         access-token))
       (catch Exception e
             (log/log-exception-event! :error (log/log-msg "Exception from decoding JWT access-token" (pr-str access-token) ":" (.getMessage e)) e)
@@ -498,9 +561,8 @@
         (cond
           (re-matches (re-pattern (str "^" logout-endpoint)) (or (:uri request) ""))
           (do
-            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: logout-endpoint, removing stored credentials"))
-            (-> (logout-handler request)
-                (state (unauthenticated))))
+            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: logout-endpoint, logging out at IDP"))
+            (logout-handler-post logout-handler logout-endpoint error-handler request))
 
           (unauthenticated-request? request)
           (do
