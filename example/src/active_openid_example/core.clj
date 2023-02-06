@@ -25,7 +25,10 @@
             [:h1 "Hello " (or (openid/user-info-name user-info) (openid/user-info-username user-info)) "!"]
             [:p "You are logged in."]
             [:h2 "logout"]
-            [:a {:href (openid/user-info-logout-uri user-info)} "Logout"]
+            [:h3 "logout with GET"]
+            (openid/logout-link-hiccup "Logout" user-info)
+            [:h3 "logout with POST"]
+            (openid/logout-form-hiccup "Logout" user-info)
             [:h3 "user info debugging:"]
             [:code (pr-str user-info)]]
            [:div

@@ -44,6 +44,11 @@ That guards your routes from unauthenticted users and offers authentication.
 Use ~active.clojure.openid/user-info-from-request~ to obtain information about
 the logged-in user in your handlers from the current request.
 
+The data structure that represents a logged-in user also contains information on
+how to logout the user, i.e. the URI and parameters needed to submit to the
+logout endpoint.  See ~active.clojure.openid/logout-link-hiccup~ and
+~active.clojure.openid/logout-form-hiccup~ how to use and render it.
+
 See [[./example]] for details.
 
 * Authorization Code Flow
