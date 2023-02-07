@@ -115,6 +115,10 @@
                              (lens/>> :logout-info user-logout-info-lens)
                              (lens/>> :access-token access-token-lens)))
 
+(def default-http-client-opts
+  {:throw-exceptions false
+   :insecure? true})
+
 (defn get-openid-provider-config!
   ;; Based on the connection parameters, fetches the openid provider
   ;; configuration from the .well-known json object provided by the idp.
@@ -125,7 +129,7 @@
   ;; an [[%openid-instance-not-available]]] condition.
   [provider-name provider-config-uri http-client-opts-map]
   (log/log-event! :trace (log/log-msg "Requesting openid provider config for" provider-name "from" provider-config-uri (when http-client-opts-map (str "with " http-client-opts-map))))
-  (try (let [{:keys [status body]} (http-client/get provider-config-uri (merge {:throw-exceptions false} http-client-opts-map))]
+  (try (let [{:keys [status body]} (http-client/get provider-config-uri (merge default-http-client-opts http-client-opts-map))]
          (log/log-event! :trace (log/log-msg "Received reply from" provider-config-uri ":" status body))
          (case status
            200 (let [provider-config-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
@@ -293,7 +297,7 @@
                                         :client_secret client-secret}}
         http-client-opts-map (openid-profile-http-client-opts-map openid-profile)]
     (log/log-event! :trace (log/log-msg "Requesting access token from" access-token-uri "with payload" payload (when http-client-opts-map (str "with " http-client-opts-map))))
-    (try (let [{:keys [status body]} (http-client/post access-token-uri (merge payload {:throw-exceptions false} http-client-opts-map))]
+    (try (let [{:keys [status body]} (http-client/post access-token-uri (merge payload default-http-client-opts http-client-opts-map))]
            (log/log-event! :trace (log/log-msg "Received reply from" access-token-uri ":" status body))
            (case status
              200 (let [access-token-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
@@ -467,7 +471,7 @@
             payload       {:headers {:authorization (str token-type " " token)}}]
         (log/log-event! :trace (log/log-msg "Requesting user info from" user-info-uri "with payload" payload (when http-client-opts-map (str "with " http-client-opts-map))))
         (try
-          (let [{:keys [status body]} (http-client/get user-info-uri (merge payload {:throw-exceptions false} http-client-opts-map))]
+          (let [{:keys [status body]} (http-client/get user-info-uri (merge payload default-http-client-opts http-client-opts-map))]
             (log/log-event! :trace (log/log-msg "Received response from " user-info-uri ":" status body))
             (case status
               200 (let [user-data-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
