@@ -102,13 +102,14 @@
   [username user-info-username
    name user-info-name
    email user-info-email
+   groups user-info-groups
    rest user-info-rest
    openid-profile user-info-openid-profile
    logout-info user-info-logout-info
    access-token user-info-access-token])
 
 (def user-info-lens
-  (user-info-projection-lens :username :name :email
+  (user-info-projection-lens :username :name :email :groups
                              :rest
                              (lens/>> :openid-profile openid-profile-lens)
                              (lens/>> :logout-info user-logout-info-lens)
@@ -474,6 +475,7 @@
                     (make-user-info (:preferred-username user-data-edn)
                                     (:name user-data-edn)
                                     (:email user-data-edn)
+                                    (:groups user-data-edn)
                                     user-data-edn
                                     openid-profile
                                     (make-user-logout-info openid-profile id-token logout-endpoint)
@@ -496,6 +498,7 @@
         (make-user-info (:unique_name claims)
                         (:name claims)
                         (get claims :email)
+                        (get claims :groups)
                         jwt
                         openid-profile
                         (make-user-logout-info openid-profile id-token logout-endpoint)
