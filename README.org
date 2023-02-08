@@ -42,7 +42,9 @@ Add ~active.clojure.openid/wrap-openid-authentication~ to your middleware stack.
 That guards your routes from unauthenticted users and offers authentication.
 
 Use ~active.clojure.openid/user-info-from-request~ to obtain information about
-the logged-in user in your handlers from the current request.
+the logged-in user in your handlers from the current request.  If the user is
+logged in, it returns an ~active.clojure.openid/UserInfo~ record with ID,
+display name, email, groups and additional information.
 
 The data structure that represents a logged-in user also contains information on
 how to logout the user, i.e. the URI and parameters needed to submit to the

@@ -99,17 +99,25 @@
   {:projection-lens user-info-projection-lens}
   make-user-info
   user-info?
-  [username user-info-username
+  [^{:doc "The user ID the user is known to the IDP."}
+   id user-info-id
+   ^{:doc "The display name of the user, at least firstname and lastname."}
    name user-info-name
+   ^{:doc "The email address of the user."}
    email user-info-email
+   ^{:doc "The groups the user is a member of."}
    groups user-info-groups
+   ^{:doc "The rest of the raw user info record obtained from the IDP."}
    rest user-info-rest
+   ^{:doc "The configured profile of the IDP which that this data got obtained."}
    openid-profile user-info-openid-profile
+   ^{:doc "The information needed to logout the user, see [[UserLogoutInfo]]."}
    logout-info user-info-logout-info
+   ^{:doc "The raw access token from the IDP."}
    access-token user-info-access-token])
 
 (def user-info-lens
-  (user-info-projection-lens :username :name :email :groups
+  (user-info-projection-lens :id :name :email :groups
                              :rest
                              (lens/>> :openid-profile openid-profile-lens)
                              (lens/>> :logout-info user-logout-info-lens)
@@ -604,7 +612,7 @@
                           (do
                             (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: got user-info" (pr-str user-info)))
                             (let [user-info-edn (user-info-lens {} user-info)]
-                              (log/log-event! :info (log/log-msg "Successfully logged in user" (user-info-username user-info)))
+                              (log/log-event! :info (log/log-msg "Successfully logged in user" (user-info-id user-info)))
                               (-> (response/redirect original-uri)
                                   (state (authenticated user-info-edn)))))))))))))
 
