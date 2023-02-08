@@ -49,6 +49,10 @@ how to logout the user, i.e. the URI and parameters needed to submit to the
 logout endpoint.  See ~active.clojure.openid/logout-link-hiccup~ and
 ~active.clojure.openid/logout-form-hiccup~ how to use and render it.
 
+To support logout, wrap your logout handler with
+~active.clojure.openid/wrap-openid-logout~ on the same route that
+~wrap-openid-authentication~ uses as its ~logout-endpoint~.
+
 See [[./example]] for details.
 
 * Authorization Code Flow

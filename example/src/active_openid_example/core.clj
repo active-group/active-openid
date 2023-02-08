@@ -44,13 +44,9 @@
     (rr/router
       [["/" {:get {:handler application}}]
        ["/deep/link/" {:get {:handler application}}]
-       ;; FIXME: if we do not list this route here, it will not be processed by
-       ;; the openid middleware at all since the default handler one level above
-       ;; will catch it.  Talk to Marco about this.
-       ;; If we add openid middleware to toplevel, browser requests to `favicon`
-       ;; will interfere with session states.
-       ["/logout" {:get {:handler application}}]]
-      {:data {:middleware [(openid/wrap-openid-authentication config)]}})
+       ;; FIXME: "/logout" invariant
+       ["/logout" (openid/wrap-openid-logout)]]
+      {:data {:middleware [(openid/wrap-openid-authentication config :logout-endpoint "/logout")]}})
     (rr/create-default-handler)))
 
 (defonce server (atom nil))
@@ -77,7 +73,7 @@
   (let [config (->> (slurp "./etc/config.edn")
                     edn/read-string
                     (active-config/make-configuration openid-config/openid-schema []))]
-    (log/set-global-log-events-config-from-map! {:min-level :debug
+    (log/set-global-log-events-config-from-map! {:min-level :trace #_:debug
                                                  :ns-filter {:deny #{"*jetty*" "org.apache.*"}}})
     (start-server! config)))
 

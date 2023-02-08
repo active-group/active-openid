@@ -398,23 +398,22 @@
       (and (authentication-started? (state request))
            (nil? (get-session-state request)))))
 
-(define-record-type LogoutSuccessful
-  make-logout-successful
-  logout-successful?
-  [])
-
-(define-record-type LogoutFailed
-  make-logout-failed
-  logout-failed?
-  [error logout-failed-error])
-
 (declare user-info-from-request)
 
-(defn logout-handler-get
-  [logout-handler _logout-endpoint _error-handler request]
-  (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: logout-endpoint, removing stored credentials"))
-  (-> (logout-handler request)
-      (state (unauthenticated))))
+(defn wrap-openid-logout
+  "Wrapper that removes authentication information from the current session.
+  Use together with [[wrap-openid-authentication]].
+  Must be the handler of the route that [[wrap-openid-authentication]] uses
+  as its `logout-endpoint`.
+
+  - `:logout-handler`: The handler that this wrapper calls.  It gets called
+  with `request`.  Defaults to [[default-logout-handler]] which redirects
+  to `/`."
+  [& {:keys [logout-handler] :or {logout-handler   default-logout-handler}}]
+  (fn [request]
+    (log/log-event! :debug (log/log-msg "wrap-openid-logout: removing stored credentials"))
+    (-> (logout-handler request)
+        (state (unauthenticated)))))
 
 (defn logout-form-hiccup
   "Render a logout form from given `user-info`.  You need to POST to the IDP's
@@ -532,11 +531,8 @@
 
   - `:logout-endpoint`: The endpoint for the IDP to redirect to after
   user-initated logout.  This is needed to remove the auth information from the
-  session.  Defaults to [[default-logout-endpoint]].
-
-  - `:logout-handler`: The handler for the logout endpoint above.  It gets
-  called with `request`.  Defaults to [[default-logout-handler]] which redirects
-  to `/`.
+  session.  Defaults to [[default-logout-endpoint]].  This must match the
+  route that [[wrap-openid-logout]] uses.
 
   - `:error-handler`: Handler thet the middleware calls in case of some
   unexpected error.  The error handler gets called with these arguments:
@@ -549,22 +545,15 @@
   "
   [config & {:keys [login-handler
                     logout-endpoint
-                    logout-handler
                     error-handler]
              :or   {login-handler   default-login-handler
                     logout-endpoint default-logout-endpoint
-                    logout-handler   default-logout-handler
                     error-handler   default-error-handler}}]
   (fn [handler]
     (fn [request]
       (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: request" request))
       (try
         (cond
-          (re-matches (re-pattern (str "^" logout-endpoint)) (or (:uri request) ""))
-          (do
-            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: logout-endpoint, logging out at IDP"))
-            (logout-handler-get logout-handler logout-endpoint error-handler request))
-
           (unauthenticated-request? request)
           (do
             (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated" (pr-str (state request))))
