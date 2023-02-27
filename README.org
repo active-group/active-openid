@@ -1,15 +1,14 @@
 This library provides utilities to interact with an [[https://openid.net/][OpenID]] identity
 provider (idp) via [[https://clojure.org/][Clojure]].
 
-Note: For now, this is specific for [[active.clojure.config/Configurationli][Keycloak]]-hosted OpenID idps.  In
-the future, the intention is to make it work for generic OpenID idps.
-
 * Description
 =active-openid= will try to discover Openid-endpoints at configured
 identity providers.  Multiple identity providers can be configured.
 * Installation
 Include the following in your project's =deps.edn= file (or
 =leiningen=, =boot=, ... equivalent):
+
+[![Clojars Project](https://img.shields.io/clojars/v/de.active-group/active-openid.svg)](https://clojars.org/de.active-group/active-openid)
 
 #+begin_src clojure
   {:deps {...
