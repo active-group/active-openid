@@ -6,9 +6,9 @@ provider (idp) via [[https://clojure.org/][Clojure]].
 identity providers.  Multiple identity providers can be configured.
 * Installation
 Include the following in your project's =deps.edn= file (or
-=leiningen=, =boot=, ... equivalent):
+=leiningen=, =boot=, ... Clojars):
 
-[![Clojars Project](https://img.shields.io/clojars/v/de.active-group/active-openid.svg)](https://clojars.org/de.active-group/active-openid)
+[[https://img.shields.io/clojars/v/de.active-group/active-openid.svg]]
 
 #+begin_src clojure
   {:deps {...
