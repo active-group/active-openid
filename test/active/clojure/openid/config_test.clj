@@ -7,13 +7,13 @@
 (def config-map
   {:openid-profiles
    [{:provider      {:name       "profile-name"
-                     :uri-prefix "profile-prefix"
                      :config-uri "http://localhost:8080/realms/active-group/.well-known/openid-configuration"}
      :client        {:id          "openid-test"
                      :secret      "<redacted>"
                      :scopes      ["openid" "username" "email"]
-                     :basic-auth? true
-                     :base-uri    "http://localhost:8888"}}]})
+                     :base-uri    "http://localhost:8888"
+                     :user-info-from :jwt}
+     :proxy {:proxy-host nil, :proxy-port nil, :proxy-user nil, :proxy-pass nil, :proxy-ignore-hosts nil}}]})
 
 (def config (active-config/make-configuration openid-config/openid-schema
                                               []
