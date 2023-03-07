@@ -44,7 +44,7 @@
 (def openid-client-base-uri
   (config/setting
    :base-uri
-   "The base (root) uri of the application using active-openid."
+   "The base (root) uri of the application using active-openid.  Can be used as the redirect uri setting in the IDP configuration."
    config/string-range))
 
 (def openid-client-user-info-from

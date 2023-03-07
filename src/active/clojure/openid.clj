@@ -216,7 +216,7 @@
   (string/join " " (map name (openid-profile-scopes openid-profile))))
 
 (defn authorize-uri
-  [openid-profile state redirect-uri]
+  [openid-profile state & [redirect-uri]]
   (let [authorize-uri (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
                                                          openid-provider-config-authorize-endpoint))]
     (str authorize-uri
@@ -234,7 +234,7 @@
       (string/replace "/" "_")))
 
 (defn logins-from-config!
-  [config redirect-uri]
+  [config & [redirect-uri]]
   (let [openid-profiles (make-openid-profiles! config)
         available-profiles (filter openid-profile? openid-profiles)
         unavailable-profiles (remove openid-profile? openid-profiles)
@@ -293,7 +293,7 @@
   idp), fetch the actual (JWT) access token.
 
   Might throw an exception."
-  [openid-profile authorization-code redirect-uri]
+  [openid-profile authorization-code & [redirect-uri]]
   (let [access-token-uri (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
                                                             openid-provider-config-token-endpoint))
         client-id        (openid-profile-client-id openid-profile)
@@ -566,7 +566,7 @@
           (do
             (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated" (pr-str (state request))))
             (let [original-uri (:uri request)
-                  logins (logins-from-config! config original-uri)]
+                  logins (logins-from-config! config)]
               (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: unauthenticated, calling login handler for" (pr-str logins)))
               (-> (login-handler request (logins-availables logins) (logins-unavailables logins))
                   (state (authentication-started (logins-state-profile-map logins) original-uri)))))
@@ -595,7 +595,7 @@
 
                 :else
                 (let [openid-profile (openid-profile-lens openid-profile-edn)
-                      access-token (fetch-access-token! openid-profile (get-authorization-code request) original-uri)]
+                      access-token (fetch-access-token! openid-profile (get-authorization-code request))]
                   (if (no-access-token? access-token)
                     (-> (error-handler request (str "Got no access token - " (no-access-token-error-message access-token)) original-uri)
                         (state (unauthenticated)))

@@ -84,6 +84,11 @@ Here are some useful links:
 - https://auth0.com/docs/get-started/authentication-and-authorization-flow/authorization-code-flow
 - https://auth0.com/docs/get-started/authentication-and-authorization-flow/authorization-code-flow-with-proof-key-for-code-exchange-pkce
 
+* Note on IDP configuration
+
+- If the IDP does not use wildcards in redirect uris, they should use the one
+  that the application uses as its `:base-uri` in the configuration.
+
 * Development
 For your convenience, this project includes a minimal [[./shell.nix][shell.nix]] file.
 Just run
