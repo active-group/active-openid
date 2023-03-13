@@ -333,6 +333,7 @@
 
 (defn default-error-handler
   [request error-string original-uri & [exception]]
+  (log/log-event! :trace (log/log-msg "default-error-handler"))
   {:status 500
    :headers {"Content-Type" "text/html"}
    :body
@@ -362,6 +363,7 @@
 
 (defn default-login-handler
   [_req availables unavailables]
+  (log/log-event! :trace (log/log-msg "default-login-handler"))
   (let [resp {:status 200
               :headers {"Content-Type" "text/html"}
               :body
@@ -383,6 +385,7 @@
 
 (defn default-logout-handler
   [_request]
+  (log/log-event! :trace (log/log-msg "default-logout-handler: Redirecting to /"))
   (response/redirect "/"))
 
 (def state
