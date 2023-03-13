@@ -204,10 +204,23 @@
   [name unavailable-login-name
    error unavailable-login-error])
 
+(defn concat-uris
+  [pref post]
+  (let [cleaned-pref (if (= \/ (last pref))
+                       (apply str (butlast pref))
+                       pref)
+        cleaned-post (if (= \/ (first post))
+                       (apply str (rest post))
+                       post)]
+    (str cleaned-pref "/" cleaned-post)))
+
 (defn absolute-redirect-uri
   "Returns the qualified redirect-uri of an `openid-profile`."
   [openid-profile & [uri]]
-  (str (openid-profile-base-uri openid-profile) uri))
+  (let [base-uri (openid-profile-base-uri openid-profile)]
+    (if (empty? uri)
+      base-uri
+      (concat-uris (openid-profile-base-uri openid-profile) uri))))
 
 (defn join-scopes
   ;; Returns a string containing all configured
@@ -557,6 +570,7 @@
              :or   {login-handler   default-login-handler
                     logout-endpoint default-logout-endpoint
                     error-handler   default-error-handler}}]
+  (log/log-event! :trace (log/log-msg "wrap-openid-authentication*: setting up auth middleware"))
   (fn [handler]
     (fn [request]
       (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: request" request))
@@ -613,7 +627,8 @@
                             (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: got user-info" (pr-str user-info)))
                             (let [user-info-edn (user-info-lens {} user-info)]
                               (log/log-event! :info (log/log-msg "Successfully logged in user" (user-info-id user-info)))
-                              (-> (response/redirect original-uri)
+                              (log/log-event! :info (log/log-msg "Redirecting to absolute original-uri" (absolute-redirect-uri openid-profile original-uri)))
+                              (-> (response/redirect (absolute-redirect-uri openid-profile original-uri))
                                   (state (authenticated user-info-edn)))))))))))))
 
           (authenticated-request? request)
@@ -630,6 +645,8 @@
   This is a convenience wrapper around [[ring-session/wrap-session]] that sets
   some useful defaults and optionally accepts and uses a given `session-store`."
   [& [session-store]]
+  (log/log-event! :trace (log/log-msg "wrap-openid-session: setting up session"
+                                      (when session-store (str ", using existing session store" (pr-str session-store)))))
   (let [session-store  (or session-store (ring-session-memory/memory-store))
         session-config (-> (:session ring-defaults/site-defaults)
                            (assoc :store session-store)
