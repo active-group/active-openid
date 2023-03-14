@@ -4,7 +4,7 @@
             [deps-deploy.deps-deploy    :as dd]))
 
 
-(def -version [0 1 (b/git-count-revs nil)])
+(def -version [0 1 105])
 
 (let [[major minor patch] -version]
   (def release-version (format "%s.%s.%s" major minor patch))
