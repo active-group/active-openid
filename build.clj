@@ -23,6 +23,18 @@
 
 (def git-scm-url (b/git-process {:git-args "config --get remote.origin.url"}))
 
+(defn- parse-github-url
+  "Parses a GitHub URL returning a [username repo] pair."
+  [url]
+  (if url
+    (next
+     (or (re-matches #"(?:[A-Za-z-]{2,}@)?github.com:([^/]+)/([^/]+).git" url)
+         (re-matches #"[^:]+://(?:[A-Za-z-]{2,}@)?github.com/([^/]+)/([^/]+?)(?:.git)?" url)))))
+
+(defn- github-url [url]
+  (if-let [[user repo] (parse-github-url url)]
+    (str "https://github.com/" user "/" repo)))
+
 (defn build-jar!
   [version]
   (let [jar-file (jar-file version)]
@@ -31,7 +43,7 @@
                   :version   version
                   :basis     basis
                   :src-dirs  ["src"]
-                  :scm       {:url git-scm-url}})
+                  :scm       {:url (github-url git-scm-url)}})
     (b/copy-dir {:src-dirs   ["src" "resources"]
                  :target-dir class-dir})
     (b/jar {:class-dir class-dir
