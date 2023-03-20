@@ -107,8 +107,8 @@
    email user-info-email
    ^{:doc "The groups the user is a member of."}
    groups user-info-groups
-   ^{:doc "The rest of the raw user info record obtained from the IDP."}
-   rest user-info-rest
+   ^{:doc "The rest of the claims obtained from the IDP."}
+   claims user-info-claims
    ^{:doc "The configured profile of the IDP which that this data got obtained."}
    openid-profile user-info-openid-profile
    ^{:doc "The information needed to logout the user, see [[UserLogoutInfo]]."}
@@ -512,23 +512,33 @@
             (log/log-exception-event! :error (log/log-msg "Received exception from" user-info-uri ":" (.getMessage e)) e)
             (make-no-user-info (.getMessage e))))))))
 
+(defn decode-jwt
+  [encoded-jwt]
+  (jwt/str->jwt encoded-jwt))
+
 (defn fetch-user-info
   "This decodes user-info from the JWT of the access-token.
   See configuration setting [[openid-config/openid-client-user-info-from]]."
   [openid-profile access-token logout-endpoint]
-  (let [token (access-token-token access-token)
-        id-token (access-token-id-token access-token)]
+  (let [encoded-access-token (access-token-token access-token)
+        encoded-id-token (access-token-id-token access-token)]
     (try
-      (let [jwt (jwt/str->jwt token)
-            claims (:claims jwt)]
-        (log/log-event! :trace (log/log-msg "Decoded JWT from access-token:" jwt))
-        (make-user-info (:unique_name claims)
-                        (:name claims)
-                        (get claims :email)
-                        (get claims :groups)
-                        jwt
+      (let [access-token-jwt (decode-jwt encoded-access-token)
+            id-token-jwt (decode-jwt encoded-id-token)
+            access-claims (:claims access-token-jwt)
+            id-claims (:claims id-token-jwt)
+            claims {:access-claims access-claims
+                    :id-claims id-claims}]
+        ;; TODO: make this mapping configurable
+        (make-user-info (get-in claims [:access-claims :unique_name])
+                        (get-in claims [:access-claims :name])
+                        (or (get-in claims [:access-claims :email])
+                            (get-in claims [:id-claims :email]))
+                        (or (get-in claims [:access-claims :groups])
+                            (get-in claims [:id-claims :roles]))
+                        claims
                         openid-profile
-                        (make-user-logout-info openid-profile id-token logout-endpoint)
+                        (make-user-logout-info openid-profile encoded-id-token logout-endpoint)
                         access-token))
       (catch Exception e
             (log/log-exception-event! :error (log/log-msg "Exception from decoding JWT access-token" (pr-str access-token) ":" (.getMessage e)) e)
