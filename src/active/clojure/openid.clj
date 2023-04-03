@@ -99,15 +99,15 @@
   {:projection-lens user-info-projection-lens}
   make-user-info
   user-info?
-  [^{:doc "The user ID the user is known to the IDP."}
+  [^{:doc "The user ID the user is known to the IDP. Maybe nil."}
    id user-info-id
-   ^{:doc "The display name of the user, at least firstname and lastname."}
+   ^{:doc "The display name of the user, at least firstname and lastname. Maybe nil."}
    name user-info-name
-   ^{:doc "The email address of the user."}
+   ^{:doc "The email address of the user. Maybe nil."}
    email user-info-email
-   ^{:doc "The groups the user is a member of."}
+   ^{:doc "The groups the user is a member of. Maybe nil."}
    groups user-info-groups
-   ^{:doc "The rest of the claims obtained from the IDP."}
+   ^{:doc "The rest of the claims obtained from the IDP. Maybe nil."}
    claims user-info-claims
    ^{:doc "The configured profile of the IDP which that this data got obtained."}
    openid-profile user-info-openid-profile
@@ -388,8 +388,11 @@
   (log/log-event! :trace (log/log-msg "default-logout-handler: Redirecting to /"))
   (response/redirect "/"))
 
+(def ^{:doc "The keyword the session lives in the in the request/response map."} state-session :session)
+(def ^{:doc "The keyword the authentication-state lives in the session map."} state-auth-state ::auth-state)
+
 (def state
-  (lens/>> :session ::auth-state))
+  (lens/>> state-session state-auth-state))
 
 (define-record-type Authenticated
   authenticated
