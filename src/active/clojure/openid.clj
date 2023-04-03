@@ -697,7 +697,7 @@
           the-openid-auth
           the-openid-session))))
 
-(defn user-info-from-request
+(defn maybe-user-info-from-request
   "Retrieve [[UserInfo]] for logged in user from `request`.
   Use this function in your handler to obtain information about your user."
   [request]
