@@ -1,5 +1,5 @@
 {:deps  {de.active-group/active-openid       {:local/root ".."}
-         de.active-group/active-clojure      {:mvn/version "0.42.0-SNAPSHOT"}
+         de.active-group/active-clojure      {:mvn/version "0.42.0"}
          de.active-group/active-logger       {:mvn/version "0.9.0"}
          metosin/reitit                      {:mvn/version "0.5.17"}
          ring/ring                           {:mvn/version "1.9.5"}
