@@ -18,7 +18,22 @@ You can connect to the Keycloak admin console at http://localhost:8080 and login
 with the default admin user ~admin~ with default password ~admin~.
 
 TODO: We did not yet manage to import users, so you have to create users for
-testing the login yourself via Keycloak's admin console.
+testing the login yourself via Keycloak's admin console:
+
+- Connect to the Keycloak admin console at http://localhost:8080 and login
+  with the default admin user ~admin~ with default password ~admin~.
+
+- Switch Realm to =active-openid-example-realm= by selecting it via the dropdown
+  select box in the upper left corner.
+
+- Choose "Users" in the menu, click button "Add user", enter "Username" and
+  click button "Create".
+
+- Then choose tab "Credentials", click button "Set password", enter "Password"
+  and "Password confirmation" and turn off "Temporary"; then click button "Save"
+  and confirm "Save password".
+
+Now you can login to the application with the choosen credentials.
 
 ** Run the example application
 
