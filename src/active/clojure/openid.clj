@@ -220,7 +220,7 @@
   (let [base-uri (openid-profile-base-uri openid-profile)]
     (if (empty? uri)
       base-uri
-      (concat-uris (openid-profile-base-uri openid-profile) uri))))
+      (concat-uris base-uri uri))))
 
 (defn join-scopes
   ;; Returns a string containing all configured
@@ -579,13 +579,20 @@
        again
      - and optionally an `exception`
   Defaults to [[default-error-handler]].
+
+  - `:stubborn-idp-login-endpoint`: Some IDPs (or their admins) might require a
+  specific login endpoint URI that is different from the recommended base URI.
+  You can set that endpoint here, it gets concatenated onto base URI.
+  Defaults to `""`.
   "
   [config & {:keys [login-handler
                     logout-endpoint
-                    error-handler]
+                    error-handler
+                    stubborn-idp-login-endpoint]
              :or   {login-handler   default-login-handler
                     logout-endpoint default-logout-endpoint
-                    error-handler   default-error-handler}}]
+                    error-handler   default-error-handler
+                    stubborn-idp-login-endpoint ""}}]
   (log/log-event! :trace (log/log-msg "wrap-openid-authentication*: setting up auth middleware"))
   (fn [handler]
     (fn [request]
@@ -595,8 +602,9 @@
           (unauthenticated-request? request)
           (do
             (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated" (pr-str (state request))))
+            (println "FICKEN stubborn-idp-login-endpoint" stubborn-idp-login-endpoint) 
             (let [original-uri (:uri request)
-                  logins (logins-from-config! config)]
+                  logins (logins-from-config! config stubborn-idp-login-endpoint)]
               (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: unauthenticated, calling login handler for" (pr-str logins)))
               (-> (login-handler request (logins-availables logins) (logins-unavailables logins))
                   (state (authentication-started (logins-state-profile-map logins) original-uri)))))
@@ -625,7 +633,7 @@
 
                 :else
                 (let [openid-profile (openid-profile-lens openid-profile-edn)
-                      access-token (fetch-access-token! openid-profile (get-authorization-code request))]
+                      access-token (fetch-access-token! openid-profile (get-authorization-code request) stubborn-idp-login-endpoint)]
                   (if (no-access-token? access-token)
                     (-> (error-handler request (str "Got no access token - " (no-access-token-error-message access-token)) original-uri)
                         (state (unauthenticated)))
