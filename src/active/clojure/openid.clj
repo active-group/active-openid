@@ -602,7 +602,6 @@
           (unauthenticated-request? request)
           (do
             (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated" (pr-str (state request))))
-            (println "FICKEN stubborn-idp-login-endpoint" stubborn-idp-login-endpoint) 
             (let [original-uri (:uri request)
                   logins (logins-from-config! config stubborn-idp-login-endpoint)]
               (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: unauthenticated, calling login handler for" (pr-str logins)))
