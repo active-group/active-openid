@@ -43,7 +43,12 @@
                   :version   version
                   :basis     basis
                   :src-dirs  ["src"]
-                  :scm       {:url (github-url git-scm-url)}})
+                  :scm       {:url (github-url git-scm-url)}
+                  :pom-data  [[:licenses
+                               [:license
+                                [:name "Eclipse Public License 1.0"]
+                                [:url "https://opensource.org/license/epl-1-0/"]
+                                 [:distribution "repo"]]]]})
     (b/copy-dir {:src-dirs   ["src" "resources"]
                  :target-dir class-dir})
     (b/jar {:class-dir class-dir
