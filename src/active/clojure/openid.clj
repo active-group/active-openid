@@ -583,7 +583,7 @@
   - `:stubborn-idp-login-endpoint`: Some IDPs (or their admins) might require a
   specific login endpoint URI that is different from the recommended base URI.
   You can set that endpoint here, it gets concatenated onto base URI.
-  Defaults to `""`.
+  Defaults to the empty string.
   "
   [config & {:keys [login-handler
                     logout-endpoint
