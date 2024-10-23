@@ -301,21 +301,23 @@
                          time/from-now)
                      (dissoc body :access-token :token-type :expires-in :refresh-token :id-token)))
 
-(defn fetch-access-token!
+(defn- fetch-access-token!
   "For a `openid-profile` and based on a `request` (the response of the
   idp), fetch the actual (JWT) access token.
 
   Might throw an exception."
-  [openid-profile authorization-code & [redirect-uri]]
+  [openid-profile authorization-code redirect-uri grant-type scope]
   (let [access-token-uri (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
                                                             openid-provider-config-token-endpoint))
         client-id        (openid-profile-client-id openid-profile)
         client-secret    (openid-profile-client-secret openid-profile)
-        payload          {:form-params {:grant_type   "authorization_code"
-                                        :code         authorization-code
-                                        :redirect_uri (absolute-redirect-uri openid-profile redirect-uri)
-                                        :client_id     client-id
-                                        :client_secret client-secret}}
+        payload          {:form-params (merge
+                                        {:client_id     client-id
+                                         :client_secret client-secret
+                                         :grant_type (or grant-type "authorization_code")}
+                                        (when authorization-code {:code authorization-code})
+                                        (when redirect-uri {:redirect_uri (absolute-redirect-uri openid-profile redirect-uri)})
+                                        (when scope {:scope scope}))}
         http-client-opts-map (openid-profile-http-client-opts-map openid-profile)]
     (log/log-event! :trace (log/log-msg "Requesting access token from" access-token-uri "with payload" payload (when http-client-opts-map (str "with " http-client-opts-map))))
     (try (let [{:keys [status body]} (http-client/post access-token-uri (merge payload default-http-client-opts http-client-opts-map))]
@@ -328,6 +330,14 @@
          (catch Exception e
            (log/log-exception-event! :error (log/log-msg "Received exception from" access-token-uri ":" (.getMessage e)) e)
            (make-no-access-token (.getMessage e))))))
+
+(defn fetch-access-token-for-authorization!
+  [openid-profile authorize-code & [redirect-uri]]
+  (fetch-access-token! openid-profile authorize-code redirect-uri "authorization_code"))
+
+(defn fetch-access-token-for-graph-api!
+  [openid-profile]
+  (fetch-access-token! openid-profile nil nil "client_credentials" "https://graph.microsoft.com/.default"))
 
 ;; default handler for middleware
 
@@ -632,7 +642,7 @@
 
                 :else
                 (let [openid-profile (openid-profile-lens openid-profile-edn)
-                      access-token (fetch-access-token! openid-profile (get-authorization-code request) stubborn-idp-login-endpoint)]
+                      access-token (fetch-access-token-for-authorization! openid-profile (get-authorization-code request) stubborn-idp-login-endpoint)]
                   (if (no-access-token? access-token)
                     (-> (error-handler request (str "Got no access token - " (no-access-token-error-message access-token)) original-uri)
                         (state (unauthenticated)))
