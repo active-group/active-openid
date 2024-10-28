@@ -314,7 +314,7 @@
         payload          {:form-params (merge
                                         {:client_id     client-id
                                          :client_secret client-secret
-                                         :grant_type (or grant-type "authorization_code")}
+                                         :grant_type grant-type}
                                         (when authorization-code {:code authorization-code})
                                         (when redirect-uri {:redirect_uri (absolute-redirect-uri openid-profile redirect-uri)})
                                         (when scope {:scope scope}))}
