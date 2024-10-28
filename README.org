@@ -12,7 +12,7 @@ Include the following in your project's =deps.edn= file (or
 
 #+begin_src clojure
   {:deps {...
-          de.active-group/active-openid {:git/tag "0.2.4" :git/sha "<sha256>"}
+          de.active-group/active-openid {:git/tag "0.2.5" :git/sha "<sha256>"}
           ...}}
 #+end_src
 * Configuration
