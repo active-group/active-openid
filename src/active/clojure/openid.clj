@@ -333,7 +333,7 @@
 
 (defn fetch-access-token-for-authorization!
   [openid-profile authorize-code & [redirect-uri]]
-  (fetch-access-token! openid-profile authorize-code redirect-uri "authorization_code"))
+  (fetch-access-token! openid-profile authorize-code redirect-uri "authorization_code" nil))
 
 (defn fetch-access-token-for-graph-api!
   [openid-profile]
