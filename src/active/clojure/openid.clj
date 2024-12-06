@@ -398,20 +398,10 @@
   (log/log-event! :trace (log/log-msg "default-logout-handler: Redirecting to /"))
   (response/redirect "/"))
 
-(def ^{:doc "The keyword the session lives in the in the request/response map."} state-session :session)
-(def ^{:doc "The keyword the authentication-state lives in the session map."} state-auth-state ::auth-state)
-
-(def state
-  (lens/>> state-session state-auth-state))
-
 (define-record-type Authenticated
   authenticated
   authenticated?
-  [user-info authenticated-user-info])
-
-(defn authenticated-request?
-  [request]
-  (authenticated? (state request)))
+  [^{:doc "In raw EDN form"} user-info authenticated-user-info])
 
 (define-record-type AuthenticationStarted
   authentication-started
@@ -419,14 +409,24 @@
   [state-profile-map authentication-started-state-profile-map
    original-uri authentication-started-original-uri])
 
-(defn authentication-started-request?
-  [request]
-  (authentication-started? (state request)))
-
 (define-record-type Unauthenticated
   unauthenticated
   unauthenticated?
   [])
+
+(def ^{:doc "The keyword the session lives in the in the request/response map."} state-session :session)
+(def ^{:doc "The keyword the authentication-state lives in the session map."} state-auth-state ::auth-state)
+
+(def state
+  (lens/>> state-session state-auth-state))
+
+(defn authenticated-request?
+  [request]
+  (authenticated? (state request)))
+
+(defn authentication-started-request?
+  [request]
+  (authentication-started? (state request)))
 
 (defn unauthenticated-request?
   [request]
