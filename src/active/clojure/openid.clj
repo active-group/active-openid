@@ -430,10 +430,11 @@
 
 (defn unauthenticated-request?
   [request]
-  (or (nil? (state request))
-      (unauthenticated? (state request))
-      (and (authentication-started? (state request))
-           (nil? (get-session-state request)))))
+  (let [st (state request)]
+    (or (nil? st)
+        (unauthenticated? st)
+        (and (authentication-started? st)
+             (nil? (get-session-state request))))))
 
 (declare user-info-from-request)
 
