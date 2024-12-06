@@ -417,8 +417,37 @@
 (def ^{:doc "The keyword the session lives in the in the request/response map."} state-session :session)
 (def ^{:doc "The keyword the authentication-state lives in the session map."} state-auth-state ::auth-state)
 
+(defn- auth-state-edn
+  ;; possible states are: Authenticated, AuthenticationStartet, Unauthenticated and nil.
+  ([edn]
+   (cond
+     (= [::unauthenticated] edn)
+     (unauthenticated)
+     
+     (and (vector? edn) (= ::authenticated (first edn)))
+     (authenticated (:user-info (second edn)))
+
+     (and (vector? edn) (= ::authentication-started (first edn)))
+     (authentication-started (:state-profile-map (second edn))
+                             (:original-uri (second edn)))
+
+     :else nil))
+  ([_ auth-state]
+   (cond
+     (unauthenticated? auth-state)
+     [::unauthenticated]
+     
+     (authenticated? auth-state)
+     [::authenticated {:user-info (authenticated-user-info auth-state)}]
+
+     (authentication-started? auth-state)
+     [::authentication-started {:state-profile-map (authentication-started-state-profile-map auth-state)
+                                :original-uri (authentication-started-original-uri auth-state)}]
+
+     :else nil)))
+
 (def state
-  (lens/>> state-session state-auth-state))
+  (lens/>> state-session state-auth-state auth-state-edn))
 
 (defn authenticated-request?
   [request]
