@@ -361,12 +361,12 @@
        (when exception
          [:div [:code (pr-str exception)]])]]])})
 
-(defn render-available-login
+(defn- render-available-login
   [available-login]
   [:a {:href (available-login-uri available-login)}
    (available-login-name available-login)])
 
-(defn render-unavailable-login
+(defn- render-unavailable-login
   [unavailable-login]
   [:span (unavailable-login-name unavailable-login)
    (str " (" (unavailable-login-error unavailable-login) ")")])
