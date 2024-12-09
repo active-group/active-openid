@@ -8,13 +8,8 @@ identity providers.  Multiple identity providers can be configured.
 Include the following in your project's =deps.edn= file (or
 =leiningen=, =boot=, ... Clojars):
 
-[[https://img.shields.io/clojars/v/de.active-group/active-openid.svg]]
+[![Clojars Project]([[https://img.shields.io/clojars/v/de.active-group/active-openid.svg]])](https://clojars.org/de.active-group/active-openid)
 
-#+begin_src clojure
-  {:deps {...
-          de.active-group/active-openid {:git/tag "0.2.6" :git/sha "<sha256>"}
-          ...}}
-#+end_src
 * Configuration
 ** ... via =active.clojure.config=
 =active-openid= provides a configuration section for projects using
@@ -116,7 +111,7 @@ environment variables
     CLOJARS_USERNAME=<username> CLOJARS_PASSWORD=<cli-token> make deploy
   #+end_src
 * License
-Copyright © 2022-2023 Active Group GmbH
+Copyright © 2022-2024 Active Group GmbH
 
 Distributed under the Eclipse Public License either version 2.0 or (at your option) any later version. [[file:LICENSE.org][(see LICENSE)]]
 * TODO [0/3]
