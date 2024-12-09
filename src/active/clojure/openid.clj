@@ -80,7 +80,7 @@
 
 (def access-token-lens
   (access-token-projection-lens :token :type :refresh-token :id-token
-                                (lens/>> :expires (lens/xmap time-coerce/to-long time-coerce/from-long))
+                                (lens/>> :expires (lens/xmap time-coerce/from-long time-coerce/to-long))
                                 :extra-data))
 
 (define-record-type
