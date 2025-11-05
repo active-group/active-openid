@@ -11,7 +11,7 @@
 
 (defn application
   [req]
-  (let [user-info (openid/user-info-from-request req)]
+  (let [user-info (openid/maybe-user-info-from-request req)]
     {:status 200
      :headers {"Content-Type" "text/html"}
      :body

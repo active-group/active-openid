@@ -436,7 +436,6 @@
         (and (authentication-started? st)
              (nil? (get-session-state request))))))
 
-(declare user-info-from-request)
 
 (defn wrap-openid-logout
   "Wrapper that removes authentication information from the current session.
