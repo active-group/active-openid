@@ -30,7 +30,7 @@
    check-session-endpoint openid-provider-config-check-session-endpoint
    supports-backchannel-logout? openid-provider-config-supports-backchannel-logout?])
 
-(def openid-provider-config-lens
+(def ^:private openid-provider-config-lens
   (openid-provider-config-projection-lens :authorization-endpoint
                                           :token-endpoint
                                           :userinfo-endpoint
@@ -51,7 +51,7 @@
    user-info-from         openid-profile-user-info-from
    http-client-opts-map   openid-profile-http-client-opts-map])
 
-(def openid-profile-lens
+(def ^:private openid-profile-lens
   (openid-profile-projection-lens :name
                                   (lens/>> :provider-config openid-provider-config-lens)
                                   :client-id
@@ -78,7 +78,7 @@
    expires access-token-expires
    extra-data access-token-extra-data])
 
-(def access-token-lens
+(def ^:private access-token-lens
   (access-token-projection-lens :token :type :refresh-token :id-token
                                 (lens/>> :expires (lens/xmap time-coerce/from-long time-coerce/to-long))
                                 :extra-data))
@@ -92,7 +92,7 @@
   [uri user-logout-info-uri
    params-map user-logout-info-params-map])
 
-(def user-logout-info-lens
+(def ^:private user-logout-info-lens
   (user-logout-info-projection-lens :uri :params-map))
 
 (define-record-type UserInfo
@@ -116,14 +116,14 @@
    ^{:doc "The raw access token from the IDP."}
    access-token user-info-access-token])
 
-(def user-info-lens
+(def ^:private user-info-lens
   (user-info-projection-lens :id :name :email :groups
                              :rest
                              (lens/>> :openid-profile openid-profile-lens)
                              (lens/>> :logout-info user-logout-info-lens)
                              (lens/>> :access-token access-token-lens)))
 
-(def default-http-client-opts
+(def ^:private default-http-client-opts
   {:throw-exceptions false
    :insecure? true})
 
@@ -148,7 +148,7 @@
          (log/log-exception-event! :error (log/log-msg "Received exception from" provider-config-uri ":" (.getMessage e)) e)
          (make-openid-instance-not-available provider-name provider-config-uri (.getMessage e)))))
 
-(defn make-openid-profile!
+(defn- make-openid-profile!
   "See make-openid-profiles!"
   [openid-config]
   (let [provider-name (active-config/access openid-config openid-config/openid-provider-name openid-config/openid-provider-section)
@@ -173,7 +173,7 @@
       (openid-instance-not-available? provider-config-or-error)
       provider-config-or-error)))
 
-(defn make-openid-profiles!
+(defn- make-openid-profiles!
   "Takes a [[active.clojure.config/Configuration]] and extracts all
   configured [[OpenidProfile]]s from the config.
 
@@ -204,7 +204,7 @@
   [name unavailable-login-name
    error unavailable-login-error])
 
-(defn concat-uris
+(defn- concat-uris
   [pref post]
   (let [cleaned-pref (if (= \/ (last pref))
                        (apply str (butlast pref))
@@ -214,7 +214,7 @@
                        post)]
     (str cleaned-pref "/" cleaned-post)))
 
-(defn absolute-redirect-uri
+(defn- absolute-redirect-uri
   "Returns the qualified redirect-uri of an `openid-profile`."
   [openid-profile & [uri]]
   (let [base-uri (openid-profile-base-uri openid-profile)]
@@ -222,13 +222,13 @@
       base-uri
       (concat-uris base-uri uri))))
 
-(defn join-scopes
+(defn- join-scopes
   ;; Returns a string containing all configured
   ;; [[openid-profile-scopes]], separated by `\space`.
   [openid-profile]
   (string/join " " (map name (openid-profile-scopes openid-profile))))
 
-(defn authorize-uri
+(defn- authorize-uri
   [openid-profile state & [redirect-uri]]
   (let [authorize-uri (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
                                                          openid-provider-config-authorize-endpoint))]
@@ -240,7 +240,7 @@
                              :state         state
                              :scope         (join-scopes openid-profile)}))))
 
-(defn random-state
+(defn- random-state
   []
   (-> (random/base64 9)
       (string/replace "+" "-")
@@ -265,22 +265,22 @@
 
 ;; post access token
 
-(defn coerce-to-int [n]
+(defn- coerce-to-int [n]
   (if (string? n)
     (Integer/parseInt n)
     n))
 
-(defn parse-params
+(defn- parse-params
   [request]
   (if-let [query-string (:query-string request)]
     (codec/form-decode query-string)
     {}))
 
-(defn get-authorization-code
+(defn- get-authorization-code
   [request]
   (get (parse-params request) "code"))
 
-(defn get-session-state
+(defn- get-session-state
   [request]
   (get (parse-params request) "state"))
 
@@ -289,7 +289,7 @@
   no-access-token?
   [error-message no-access-token-error-message])
 
-(defn format-access-token
+(defn- format-access-token
   [{:keys [access-token token-type expires-in refresh-token id-token] :as body}]
   (make-access-token access-token
                      token-type
@@ -361,12 +361,12 @@
        (when exception
          [:div [:code (pr-str exception)]])]]])})
 
-(defn render-available-login
+(defn- render-available-login
   [available-login]
   [:a {:href (available-login-uri available-login)}
    (available-login-name available-login)])
 
-(defn render-unavailable-login
+(defn- render-unavailable-login
   [unavailable-login]
   [:span (unavailable-login-name unavailable-login)
    (str " (" (unavailable-login-error unavailable-login) ")")])
@@ -398,24 +398,24 @@
   (log/log-event! :trace (log/log-msg "default-logout-handler: Redirecting to /"))
   (response/redirect "/"))
 
-(define-record-type Authenticated
+(define-record-type ^:private Authenticated
   authenticated
   authenticated?
   [^{:doc "In raw EDN form"} user-info authenticated-user-info])
 
-(define-record-type AuthenticationStarted
+(define-record-type ^:private AuthenticationStarted
   authentication-started
   authentication-started?
   [state-profile-map authentication-started-state-profile-map
    original-uri authentication-started-original-uri])
 
-(define-record-type Unauthenticated
+(define-record-type ^:private Unauthenticated
   unauthenticated
   unauthenticated?
   [])
 
-(def ^{:doc "The keyword the session lives in the in the request/response map."} state-session :session)
-(def ^{:doc "The keyword the authentication-state lives in the session map."} state-auth-state ::auth-state)
+(def ^{:private true :doc "The keyword the session lives in the in the request/response map."} state-session :session)
+(def ^{:private true :doc "The keyword the authentication-state lives in the session map."} state-auth-state ::auth-state)
 
 (defn- auth-state-edn
   ;; possible states are: Authenticated, AuthenticationStartet, Unauthenticated and nil.
@@ -446,25 +446,24 @@
 
      :else nil)))
 
-(def state
+(def ^:private state
   (lens/>> state-session state-auth-state auth-state-edn))
 
-(defn authenticated-request?
+(defn- authenticated-request?
   [request]
   (authenticated? (state request)))
 
-(defn authentication-started-request?
+(defn- authentication-started-request?
   [request]
   (authentication-started? (state request)))
 
-(defn unauthenticated-request?
+(defn- unauthenticated-request?
   [request]
   (let [st (state request)]
     (or (nil? st)
         (unauthenticated? st)
         (and (authentication-started? st)
              (nil? (get-session-state request))))))
-
 
 (defn wrap-openid-logout
   "Wrapper that removes authentication information from the current session.
@@ -507,7 +506,7 @@
   [text user-info]
   [:a {:href (logout-href (user-info-logout-info user-info))} text])
 
-(defn make-user-logout-info
+(defn- make-user-logout-info
   [openid-profile id-token-hint logout-endpoint]
   (really-make-user-logout-info
     (let [end-session-endpoint
@@ -554,7 +553,7 @@
             (log/log-exception-event! :error (log/log-msg "Received exception from" user-info-uri ":" (.getMessage e)) e)
             (make-no-user-info (.getMessage e))))))))
 
-(defn decode-jwt
+(defn- decode-jwt
   [encoded-jwt]
   (jwt/str->jwt encoded-jwt))
 
