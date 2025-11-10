@@ -1,53 +1,47 @@
-This library provides utilities to interact with an [[https://openid.net/][OpenID]] identity
-provider (idp) via [[https://clojure.org/][Clojure]].
+#+TITLE: Active OpenID
+
+[[https://clojars.org/de.active-group/active-openid][https://img.shields.io/clojars/v/de.active-group/active-openid.svg]]
+
+This library provides utilities to interact with an [[https://openid.net/][OpenID]] identity provider
+(IdP) via [[https://clojure.org/][Clojure]].
 
 * Description
-=active-openid= will try to discover Openid-endpoints at configured
-identity providers.  Multiple identity providers can be configured.
-* Installation
-Include the following in your project's =deps.edn= file (or
-=leiningen=, =boot=, ... Clojars):
 
-[[https://img.shields.io/clojars/v/de.active-group/active-openid.svg]]
+=active-openid= will try to discover OpenID endpoints at configured identity
+providers. Multiple identity providers can be configured.
 
-#+begin_src clojure
-  {:deps {...
-          de.active-group/active-openid {:git/tag "0.2.6" :git/sha "<sha256>"}
-          ...}}
-#+end_src
 * Configuration
-** ... via =active.clojure.config=
-=active-openid= provides a configuration section for projects using
-=active.clojure.config= from [[https://github.com/active-group/active-clojure#configuration][=active-clojure=]].  Below is the
-configuration schema. [[./example/etc/config.edn][An example configuration file can be found here]].
 
-#+begin_src clojure
-#+end_src
+=active-openid= provides a configuration section for projects using
+=active.clojure.config= from [[https://github.com/active-group/active-clojure#configuration][active-clojure]]. Below is the configuration schema.
+[[./example/etc/config.edn][An example configuration file can be found here]].
+
 Include the schema =openid-schema= via a =section= in your code like this
 
 #+begin_src clojure
-  (ns your.ns
-    (:require [active.clojure.config :as active-config]
-              [active.clojure.openid.config :as openid-config]))
+(ns your.ns
+  (:require [active.clojure.config :as active-config]
+            [active.clojure.openid.config :as openid-config]))
 
-  (def openid-section
-    (config/section
-      :openid
-      openid-config/openid-schema))
+(def openid-section
+  (config/section
+    :openid
+    openid-config/openid-schema))
 #+end_src
 
 * Usage
+
 Add ~active.clojure.openid/wrap-openid-authentication~ to your middleware stack.
 That guards your routes from unauthenticted users and offers authentication.
 
-Use ~active.clojure.openid/user-info-from-request~ to obtain information about
-the logged-in user in your handlers from the current request.  If the user is
+Use ~active.clojure.openid/maybe-user-info-from-request~ to obtain information about
+the logged-in user in your handlers from the current request. If the user is
 logged in, it returns an ~active.clojure.openid/UserInfo~ record with ID,
 display name, email, groups and additional information.
 
 The data structure that represents a logged-in user also contains information on
 how to logout the user, i.e. the URI and parameters needed to submit to the
-logout endpoint.  See ~active.clojure.openid/logout-link-hiccup~ and
+logout endpoint. See ~active.clojure.openid/logout-link-hiccup~ and
 ~active.clojure.openid/logout-form-hiccup~ how to use and render it.
 
 To support logout, wrap your logout handler with
@@ -57,11 +51,11 @@ To support logout, wrap your logout handler with
 See [[./example]] for details.
 
 * Authorization Code Flow
-This library implements OpenID's [Authorization Code
-Flow](https://tools.ietf.org/html/rfc6749#section-4.1).  This works for regular
-web apps and server-side apps where the source code is not publicly exposed.
-The exchange must happen server-side because during this exchange the server
-must also pass along your application's Client Secret, which must always be kept
+
+This library implements OpenID's [[https://tools.ietf.org/html/rfc6749#section-4.1][Authorization Code Flow]]. This works for regular
+web apps and server-side apps where the source code is not publicly exposed. The
+exchange must happen server-side because during this exchange the server must
+also pass along your application's Client Secret, which must always be kept
 secure.
 
 This also works for single-page applications when we guard the route that serves
@@ -69,14 +63,14 @@ the application since the authentication then happens not in the application
 itself but beforehand on the server side.  So we are fine.
 
 When we serve a single-page application without such a guard, this library is
-not sufficient.  Then we need to implement [Authorization Code Flow with Proof
-Key for Code Exchange (PKCE)](https://tools.ietf.org/html/rfc7636) _in the
-client_, so we need to implement it in ClojureScript.  For that we should
-abstract a lot of the code in this library that takes care of building and
-parsing the various requests and replies into ~cljc~ namespaces that we can then
-use in both Clojure- and ClojureScript-specific implementations.  Of course,
-doing the actual requests will differ.  But this could probably also be
-abstracted with a monadic implementation with different monad runners.
+not sufficient. Then we need to implement [[https://tools.ietf.org/html/rfc7636][Authorization Code Flow with Proof Key
+for Code Exchange (PKCE)]] _in the client_, so we need to implement it in
+ClojureScript. For that we should abstract a lot of the code in this library
+that takes care of building and parsing the various requests and replies into
+=cljc= namespaces that we can then use in both Clojure- and
+ClojureScript-specific implementations. Of course, doing the actual requests
+will differ. But this could probably also be abstracted with a monadic
+implementation with different monad runners.
 
 Here are some useful links:
 
@@ -84,43 +78,55 @@ Here are some useful links:
 - https://auth0.com/docs/get-started/authentication-and-authorization-flow/authorization-code-flow
 - https://auth0.com/docs/get-started/authentication-and-authorization-flow/authorization-code-flow-with-proof-key-for-code-exchange-pkce
 
-* Note on IDP configuration
+* Note on IdP configuration
 
-- If the IDP does not use wildcards in redirect uris, they should use the one
-  that the application uses as its `:base-uri` in the configuration.
+If the IdP does not use wildcards in redirect uris, they should use the one that
+the application uses as its =:base-uri= in the configuration.
 
 * Development
+
 For your convenience, this project includes a minimal [[./shell.nix][shell.nix]] file.
 Just run
-#+begin_src
-    nix-shell --pure
+
+#+begin_src shell
+nix-shell --pure
 #+end_src
+
 and you should be good to go.
+
 * Running tests
-=active-openid= provides a =Makefile= with a =test= target.  To run
-the tests:
+
+To run the tests, execute
 
 #+begin_src
-    make test
+make test
 #+end_src
+
 * Deploy a new release
-=active-openid= provides a =Makefile= with a =deploy= target.  To
-Release a new version to [[https://clojars.org/][Clojars]], the =deploy= target relies on two
-environment variables
+
+To release a new version to [[https://clojars.org/][Clojars]], use the =deploy= target, which relies on
+two environment variables:
   
-- =CLOJARS_USERNAME=:  Your clojars username.
-- =CLOJARS_PASSWORD=:  Your clojars cli token.
+- =CLOJARS_USERNAME=:  Your clojars username
+- =CLOJARS_PASSWORD=:  Your clojars cli token
 
-  To publish a new release, run:
-  #+begin_src 
-    CLOJARS_USERNAME=<username> CLOJARS_PASSWORD=<cli-token> make deploy
-  #+end_src
+To publish a new release, run:
+
+#+begin_src shell
+CLOJARS_USERNAME=<username> CLOJARS_PASSWORD=<cli-token> make deploy
+#+end_src
+
 * License
-Copyright © 2022-2023 Active Group GmbH
 
-Distributed under the Eclipse Public License either version 2.0 or (at your option) any later version. [[file:LICENSE.org][(see LICENSE)]]
+Copyright © 2022-2025 Active Group GmbH
+
+Distributed under the Eclipse Public License either version 2.0 or (at your
+option) any later version. [[file:LICENSE.org][(see LICENSE)]]
+
 * TODO [0/3]
+
 Some of the todos for this project.
+
 - [ ] [[https://openid.net/specs/openid-connect-frontchannel-1_0.html][Frontchannel logout]]
 - [ ] [[https://openid.net/specs/openid-connect-backchannel-1_0.html][Backchannel logout]]
 - [ ] =check_session_iframe=.  Included in discovered endpoints and
