@@ -342,7 +342,7 @@
 ;; default handler for middleware
 
 (defn default-error-handler
-  [request error-string original-uri & [exception]]
+  [request {:keys [type description message exception]} original-uri]
   (log/log-event! :trace (log/log-msg "default-error-handler"))
   {:status 500
    :headers {"Content-Type" "text/html"}
@@ -353,12 +353,12 @@
      [:main
       [:div
        [:h1 "Error:"]
-       [:div [:code error-string]]
+       [:div [:code (str description " " message)]]
        [:div (when original-uri [:a {:href original-uri} "try again"])]
        [:h1 "Session:"]
        [:div [:code (:session request)]]
        [:h1 "Exception:"]
-       (when exception
+       (when (= type ::exception)
          [:div [:code (pr-str exception)]])]]])})
 
 (defn- render-available-login
@@ -612,10 +612,15 @@
   - `:error-handler`: Handler thet the middleware calls in case of some
   unexpected error.  The error handler gets called with these arguments:
      - `request`: The current request
-     - `error-string`: A string that describes the error
+     - `error`: A map providing information about the error:
+       | key          | description |
+       | -------------| ------------|
+       |`:type`       | REQUIRED. Type of error. One of `::no-profile`,`::no-auth-code`,`::no-access-token`,`::no-user-info`,`::exception`|
+       |`:description`| REQUIRED. Text description of the error |
+       |`:message`    | OPTIONAL. Additional error message. Supplied for errors of type `::no-access-token`,`::no-user-info` and `::exception`  |
+       |`:exception`  | OPTIONAL. Exception that was thrown. Supplied for errors of type `::exception`|
      - `original-uri`: The URI of the original request, useful to try request
        again
-     - and optionally an `exception`
   Defaults to [[default-error-handler]].
 
   - `:stubborn-idp-login-endpoint`: Some IDPs (or their admins) might require a
@@ -661,18 +666,28 @@
                   _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, trying to authorize with profile" openid-profile-edn))]
               (cond
                 (nil? openid-profile-edn)
-                (-> (error-handler request "The state we got from IDP did not match our's." original-uri)
+                (-> (error-handler request
+                                   {:type ::no-profile
+                                    :description "The state we got from IDP did not match our's."}
+                                   original-uri)
                     (state (unauthenticated)))
 
                 (nil? (get-authorization-code request))
-                (-> (error-handler request "The authorization code from the IDP is missing." original-uri)
+                (-> (error-handler request
+                                   {:type ::no-auth-code
+                                    :description "The authorization code from the IDP is missing."}
+                                   original-uri)
                     (state (unauthenticated)))
 
                 :else
                 (let [openid-profile (openid-profile-lens openid-profile-edn)
                       access-token (fetch-access-token-for-authorization! openid-profile (get-authorization-code request) stubborn-idp-login-endpoint)]
                   (if (no-access-token? access-token)
-                    (-> (error-handler request (str "Got no access token - " (no-access-token-error-message access-token)) original-uri)
+                    (-> (error-handler request
+                                       {:type ::no-access-token
+                                        :description "Got no access token."
+                                        :message (no-access-token-error-message access-token)}
+                                       original-uri)
                         (state (unauthenticated)))
                     (do
                       (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: got access-token" (pr-str access-token)))
@@ -681,7 +696,11 @@
                                                 :endpoint fetch-user-info!)
                             user-info (user-info-fetcher openid-profile access-token logout-endpoint)]
                         (if (no-user-info? user-info)
-                          (-> (error-handler request (str "Got no user info - " (no-user-info-error-message user-info)) original-uri)
+                          (-> (error-handler request
+                                             {:type ::no-user-info
+                                              :description "Got no user info."
+                                              :message (no-user-info-error-message user-info)}
+                                             original-uri)
                               (state (unauthenticated)))
 
                           (do
@@ -699,7 +718,10 @@
             (handler request)))
         (catch Exception e
           (log/log-exception-event! :error (log/log-msg "wrap-ensure-authenticated: caught exception" (.getMessage e) request) e)
-          (error-handler request (.getMessage e) e))))))
+          (error-handler request {:type ::exception
+                                  :description "An exception was caught."
+                                  :message (.getMessage e)
+                                  :exception e} nil))))))
 
 (defn wrap-openid-session
   "Our implementation uses sessions, so we need [[ring-session/wrap-session]] middleware.
