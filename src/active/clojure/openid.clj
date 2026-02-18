@@ -826,9 +826,11 @@
   options."
   [config & {:keys [session-store] :as args}]
   (let [the-openid-auth (wrap-openid-authentication* config args)
-        the-openid-session (wrap-openid-session session-store)]
+        the-openid-session (wrap-openid-session session-store)
+        the-automatic-refresh (wrap-automatic-refresh)]
     (fn [handler] ;; FIXME: add & args to the parameter-list here, because of reitit
       (-> handler
+          the-automatic-refresh
           the-openid-auth
           the-openid-session))))
 
