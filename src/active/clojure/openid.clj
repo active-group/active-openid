@@ -301,6 +301,20 @@
                          time/from-now)
                      (dissoc body :access-token :token-type :expires-in :refresh-token :id-token)))
 
+(defn- fetch-access-token!*
+  [access-token-uri payload http-client-opts-map]
+  (log/log-event! :trace (log/log-msg "Requesting access token from" access-token-uri "with payload" payload (when http-client-opts-map (str "with " http-client-opts-map))))
+  (try (let [{:keys [status body]} (http-client/post access-token-uri (merge payload default-http-client-opts http-client-opts-map))]
+         (log/log-event! :trace (log/log-msg "Received reply from" access-token-uri ":" status body))
+         (case status
+           200 (let [access-token-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
+                 (log/log-event! :debug (log/log-msg "Received access-token" access-token-edn))
+                 (format-access-token access-token-edn))
+           (make-no-access-token (str status " " body))))
+       (catch Exception e
+         (log/log-exception-event! :error (log/log-msg "Received exception from" access-token-uri ":" (.getMessage e)) e)
+         (make-no-access-token (.getMessage e)))))
+
 (defn- fetch-access-token!
   "For a `openid-profile` and based on a `request` (the response of the
   idp), fetch the actual (JWT) access token.
@@ -319,17 +333,7 @@
                                         (when redirect-uri {:redirect_uri (absolute-redirect-uri openid-profile redirect-uri)})
                                         (when scope {:scope scope}))}
         http-client-opts-map (openid-profile-http-client-opts-map openid-profile)]
-    (log/log-event! :trace (log/log-msg "Requesting access token from" access-token-uri "with payload" payload (when http-client-opts-map (str "with " http-client-opts-map))))
-    (try (let [{:keys [status body]} (http-client/post access-token-uri (merge payload default-http-client-opts http-client-opts-map))]
-           (log/log-event! :trace (log/log-msg "Received reply from" access-token-uri ":" status body))
-           (case status
-             200 (let [access-token-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
-                   (log/log-event! :debug (log/log-msg "Received access-token" access-token-edn))
-                   (format-access-token access-token-edn))
-             (make-no-access-token (str status " " body))))
-         (catch Exception e
-           (log/log-exception-event! :error (log/log-msg "Received exception from" access-token-uri ":" (.getMessage e)) e)
-           (make-no-access-token (.getMessage e))))))
+    (fetch-access-token!* access-token-uri payload http-client-opts-map)))
 
 (defn fetch-access-token-for-authorization!
   [openid-profile authorize-code & [redirect-uri]]
@@ -338,6 +342,25 @@
 (defn fetch-access-token-for-graph-api!
   [openid-profile]
   (fetch-access-token! openid-profile nil nil "client_credentials" "https://graph.microsoft.com/.default"))
+
+(defn fetch-refreshed-access-token!
+  [openid-profile refresh-token]
+  (log/log-event! :trace (log/log-msg "Refreshing access token with openid-profile" (pr-str openid-profile)))
+  (let [access-token-uri (lens/yank openid-profile (lens/>> openid-profile-openid-provider-config
+                                                            openid-provider-config-token-endpoint))
+        client-id (openid-profile-client-id openid-profile)
+        client-secret (openid-profile-client-secret openid-profile)
+        payload {:form-params (merge
+                               {:client_id client-id
+                                :client_secret client-secret
+                                :grant_type "refresh_token"
+                                :refresh_token refresh-token})}
+        http-client-opts-map (openid-profile-http-client-opts-map openid-profile)]
+
+    (fetch-access-token!*
+     access-token-uri
+     payload
+     http-client-opts-map)))
 
 ;; default handler for middleware
 
@@ -585,6 +608,10 @@
             (log/log-exception-event! :error (log/log-msg "Exception from decoding JWT access-token" (pr-str access-token) ":" (.getMessage e)) e)
             (make-no-user-info (.getMessage e))))))
 
+(defn- get-current-time! []
+  (time-coerce/from-long
+   (System/currentTimeMillis)))
+
 (defn wrap-openid-authentication*
   "Middleware that shortcuts execution of the `handler` and redirects the user
   to the login page.
@@ -722,6 +749,47 @@
                                   :description "An exception was caught."
                                   :message (.getMessage e)
                                   :exception e} nil))))))
+
+(defn wrap-automatic-refresh
+  [& {:keys [error-handler]
+      :or {error-handler default-error-handler}}]
+  (fn [handler]
+    (fn [request]
+      (if-not (authenticated-request? request)
+        ;; just pass the request on
+        (handler request)
+        ;; else potentially handle refresh
+        (let [original-uri (:uri request)
+              st (state request)
+              user-info (user-info-lens (authenticated-user-info st))
+              old-access-token (user-info-access-token user-info)
+              expires (access-token-expires old-access-token)
+              now (get-current-time!)]
+
+          (if (time/before? now expires)
+            ;; all good
+            (handler request)
+            ;; else try refresh
+            (let [openid-profile (user-info-openid-profile user-info)
+                  new-access-token (fetch-refreshed-access-token!
+                                    openid-profile
+                                    (access-token-refresh-token old-access-token))]
+              (if (no-access-token? new-access-token)
+                (-> (error-handler request
+                                   {:type ::no-access-token
+                                    :description "Got no access token from refresh request."
+                                    :message (no-access-token-error-message new-access-token)}
+                                   original-uri)
+                    (state (unauthenticated)))
+                ;; else success
+                (let [new-state (lens/shove st
+                                            (lens/>> authenticated-user-info
+                                                     user-info-lens
+                                                     user-info-access-token)
+                                            new-access-token)
+                      new-request (lens/shove request state new-state)]
+                  (-> (handler new-request)
+                      (lens/shove state new-state)))))))))))
 
 (defn wrap-openid-session
   "Our implementation uses sessions, so we need [[ring-session/wrap-session]] middleware.
