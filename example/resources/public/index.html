@@ -1,0 +1,69 @@
+<!doctype html>
+<html class="no-js" lang="">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="x-ua-compatible" content="ie=edge">
+        <title>BFF</title>
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+        <!-- Place favicon.ico in the root directory -->
+
+    </head>
+    <body>
+        <!--[if lt IE 8]>
+            <p class="browserupgrade">
+            You are using an <strong>outdated</strong> browser. Please
+            <a href="http://browsehappy.com/">upgrade your browser</a> to improve
+            your experience.
+            </p>
+        <![endif]-->
+        <h1 id="h">You are ...</h1>
+
+        <a href="/auth/login">Login</a>
+        <a href="/auth/logout">Logout</a>
+
+        <button id="nuke">Send nukes</button>
+        <pre id="output" style="background: #ccc; min-height: 4ex;"></pre>
+
+
+        <script type="text/javascript">
+         console.log("Starting ...");
+         const response = fetch('/auth/loggedin', {
+             credentials: 'include' // Include Session-Cookies
+         });
+
+          response.then((res) =>
+              res.json().then((res) =>
+                  res.loggedIn === true
+                      ?
+                          document.getElementById("h").textContent = "Logged In!"
+                      :
+                          document.getElementById("h").textContent = "Not logged in :-("
+              )
+          );
+
+          document.getElementById("nuke").addEventListener("click", (event) => {
+              console.log("Try sending nukes");
+              const response = fetch('/api/nuke', {
+                  credentials: 'include' // Include Session-Cookies
+              });
+
+              response.then((res) => {
+                  console.log(res);
+                  if (res.ok) {
+                      res.text().then((txt) => {
+                          document.getElementById("output").textContent = txt;
+                      });
+                  } else {
+                      console.log("kaputt");
+                      document.getElementById("output").textContent = res.status.toString() + " " + res.statusText;
+                  }
+              });
+          });
+
+        </script>
+
+    </body>
+</html>
