@@ -753,7 +753,8 @@
                               (-> (response/redirect (absolute-redirect-uri openid-profile original-uri))
                                   (state (authenticated user-info-edn))
                                   ;; ring.middleware.session way of setting cookie attributes during a session
-                                  (assoc :session-cookie-attrs {:expires (format-http-datetime (access-token-refresh-expires access-token))}))))))))))))
+                                  ;; NO: This will just set a _new_ session cookie, leading to endless redirect loops
+                                  #_(assoc :session-cookie-attrs {:expires (format-http-datetime (access-token-refresh-expires access-token))}))))))))))))
 
           (authenticated-request? request)
           ;; FIXME: consider validity here, maybe refresh token https://auth0.com/docs/authenticate/login/oidc-conformant-authentication/oidc-adoption-refresh-tokens
