@@ -293,7 +293,9 @@
   [error-message no-access-token-error-message])
 
 (defn- format-access-token
-  [{:keys [access-token token-type expires-in refresh-expires-in refresh-token id-token] :as body}]
+  [{:keys [access-token token-type expires-in refresh-expires-in refresh-token id-token]
+    :or {expires-in 3600 refresh-expires-in 14400}
+    :as body}]
   (make-access-token access-token
                      token-type
                      refresh-token
