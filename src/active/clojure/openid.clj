@@ -8,6 +8,7 @@
             [clj-jwt.core :as jwt]
             [clj-time.core :as time]
             [clj-time.coerce :as time-coerce]
+            [clj-time.format :as time-format]
             [camel-snake-kebab.core :as csk]
             [clojure.data.json :as json]
             [clojure.string :as string]
@@ -76,11 +77,13 @@
    refresh-token access-token-refresh-token
    id-token access-token-id-token
    expires access-token-expires
+   refresh-expires access-token-refresh-expires
    extra-data access-token-extra-data])
 
 (def ^:private access-token-lens
   (access-token-projection-lens :token :type :refresh-token :id-token
                                 (lens/>> :expires (lens/xmap time-coerce/from-long time-coerce/to-long))
+                                (lens/>> :refresh-expires (lens/xmap time-coerce/from-long time-coerce/to-long))
                                 :extra-data))
 
 (define-record-type
@@ -290,7 +293,7 @@
   [error-message no-access-token-error-message])
 
 (defn- format-access-token
-  [{:keys [access-token token-type expires-in refresh-token id-token] :as body}]
+  [{:keys [access-token token-type expires-in refresh-expires-in refresh-token id-token] :as body}]
   (make-access-token access-token
                      token-type
                      refresh-token
@@ -299,7 +302,11 @@
                          coerce-to-int
                          time/seconds
                          time/from-now)
-                     (dissoc body :access-token :token-type :expires-in :refresh-token :id-token)))
+                     (-> refresh-expires-in
+                         coerce-to-int
+                         time/seconds
+                         time/from-now)
+                     (dissoc body :access-token :token-type :expires-in :refresh-expires-in :refresh-token :id-token)))
 
 (defn- fetch-access-token!*
   [access-token-uri payload http-client-opts-map]
@@ -612,6 +619,12 @@
   (time-coerce/from-long
    (System/currentTimeMillis)))
 
+(let [http-date-formatter (time-format/formatter "E, dd MMM yyyy hh:mm:ss")]
+  (defn format-http-datetime [dt]
+    (str
+     (time-format/unparse http-date-formatter dt)
+     " GMT")))
+
 (defn wrap-openid-authentication*
   "Middleware that shortcuts execution of the `handler` and redirects the user
   to the login page.
@@ -736,7 +749,9 @@
                               (log/log-event! :info (log/log-msg "Successfully logged in user" (user-info-id user-info)))
                               (log/log-event! :info (log/log-msg "Redirecting to absolute original-uri" (absolute-redirect-uri openid-profile original-uri)))
                               (-> (response/redirect (absolute-redirect-uri openid-profile original-uri))
-                                  (state (authenticated user-info-edn)))))))))))))
+                                  (state (authenticated user-info-edn))
+                                  ;; ring.middleware.session way of setting cookie attributes during a session
+                                  (assoc :session-cookie-attrs {:expires (format-http-datetime (access-token-refresh-expires access-token))}))))))))))))
 
           (authenticated-request? request)
           ;; FIXME: consider validity here, maybe refresh token https://auth0.com/docs/authenticate/login/oidc-conformant-authentication/oidc-adoption-refresh-tokens
