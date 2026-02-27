@@ -101,7 +101,7 @@
   (let [config (->> (slurp "./etc/config.edn")
                     edn/read-string
                     (active-config/make-configuration openid-config/openid-schema []))]
-    (log/set-global-log-events-config-from-map! {:min-level :trace #_:debug
+    (log/set-global-log-events-config-from-map! {:min-level :error #_:trace
                                                  :ns-filter {:deny #{"*jetty*" "org.apache.*"}}})
     (start-server! config)))
 
