@@ -4,11 +4,10 @@
             [active.clojure.openid :as openid]
             [active.clojure.openid.config :as openid-config]
             [clojure.edn :as edn]
-            [hiccup.page :as hp]
-            [reitit.ring :as rr]
             [ring.adapter.jetty :as jetty]
             [clj-http.client :as http-client]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [ring.middleware.resource :as resource])
   (:gen-class))
 
 ;; This example implements the "Backend-for-Frontend" architecture pattern
@@ -36,9 +35,7 @@
     {:method request-method
      :url target-url
      :headers (dissoc headers "host")
-     :body body
-     :as :stream
-     :throw-exceptions false}))
+     :body body}))
 
 (defn api [req]
   (if-let [user-info (openid/maybe-user-info-from-request req)]
@@ -53,29 +50,29 @@
     ;; else not logged in yet
     {:status 401}))
 
+(defn handler [req]
+  (if (= "/" (:uri req))
+    {:status 200
+     :headers {"Content-type" "text/html"}
+     :body (slurp "resources/public/index.html")}
+    (api req)))
+
 (defn app
   [config]
-  (rr/ring-handler
-
-   (rr/router
-    [["/api/*" {:get {:handler api}}]])
-
-   (rr/routes
-    (rr/create-resource-handler {:path "/"})
-    (rr/create-default-handler))
-   {:middleware
-    [(openid/wrap-openid-session)
-     (openid/wrap-automatic-refresh)
-     (openid/wrap-openid-authentication*
-      config
-      :login-handler
-      (fn [req availables unavailables]
-        (if-let [available (first availables)]
-          {:status 302
-           :headers {"Location"
-                     (openid/available-login-uri available)}}
-          {:status 200
-           :body "No login services available"})))]}))
+  (-> handler
+      (resource/wrap-resource "public")
+      ((openid/wrap-openid-authentication*
+        config
+        :login-handler
+        (fn [req availables unavailables]
+          (if-let [available (first availables)]
+            {:status 302
+             :headers {"Location"
+                       (openid/available-login-uri available)}}
+            {:status 200
+             :body "No login services available"}))))
+      ((openid/wrap-automatic-refresh))
+      ((openid/wrap-openid-session))))
 
 (defonce server (atom nil))
 
