@@ -69,7 +69,6 @@
      :throw-exceptions false}))
 
 (defn api [req]
-  (println "---- hey im here")
   (if-let [user-info (openid/maybe-user-info-from-request req)]
     ;; get token from user-info, forward enriched request to real API
     (let [token (openid/access-token-token
@@ -85,16 +84,31 @@
 (defn app
   [config]
   (rr/ring-handler
+
    (rr/router
-    [["/api/*" {:get {:handler ((openid/wrap-automatic-refresh) api)}}]
+    [["/api/*" {:get {:handler api}}]
      ["/auth"
       ["/loggedin" {:get {:handler logged-in-handler}}]
-      ["/login" {:get {:handler (make-login-handler config)}}]
-      ["/logout" (openid/wrap-openid-logout)]]]
-    {:data {:middleware [(openid/wrap-openid-session)]}})
+      ["/logout" (openid/wrap-openid-logout)]]])
+
    (rr/routes
     (rr/create-resource-handler {:path "/"})
-    (rr/create-default-handler))))
+    (rr/create-default-handler))
+   {:middleware
+    [(openid/wrap-openid-session)
+     (openid/wrap-automatic-refresh)
+     (openid/wrap-openid-authentication*
+      config
+      :login-handler
+      (fn [req availables unavailables]
+        (if-let [available (first availables)]
+          {:status 302
+           :headers {"Location"
+                     (openid/available-login-uri available)}}
+          {:status 200
+           :body "No login services available"}))
+      :logout-endpoint
+      "/auth/logout")]}))
 
 (defonce server (atom nil))
 
