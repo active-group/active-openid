@@ -14,34 +14,6 @@
 ;; This example implements the "Backend-for-Frontend" architecture pattern
 ;; See https://datatracker.ietf.org/doc/html/draft-ietf-oauth-browser-based-apps#name-backend-for-frontend-bff
 
-(defn logged-in-handler [req]
-  {:status 200
-   :headers {"Content-type" "application/json"}
-   :body (str "{"
-              "\"loggedIn\": "
-              (if (openid/maybe-user-info-from-request req)
-                "true"
-                "false")
-              "}")})
-
-(defn make-login-handler [config]
-  ((openid/wrap-openid-authentication*
-    config
-    :login-handler
-    (fn [req availables unavailables]
-      (if-let [available (first availables)]
-        {:status 302
-         :headers {"Location"
-                   (openid/available-login-uri available)}}
-        {:status 200
-         :body "No login services available"}))
-    :stubborn-idp-login-endpoint
-    "/auth/login"
-    :logout-endpoint
-    "/auth/logout")
-   (constantly {:status 302
-                :headers {"Location" "/"}})))
-
 (defn forward-request
   [req]
   (let [{:keys [scheme
@@ -86,10 +58,7 @@
   (rr/ring-handler
 
    (rr/router
-    [["/api/*" {:get {:handler api}}]
-     ["/auth"
-      ["/loggedin" {:get {:handler logged-in-handler}}]
-      ["/logout" (openid/wrap-openid-logout)]]])
+    [["/api/*" {:get {:handler api}}]])
 
    (rr/routes
     (rr/create-resource-handler {:path "/"})
@@ -106,9 +75,7 @@
            :headers {"Location"
                      (openid/available-login-uri available)}}
           {:status 200
-           :body "No login services available"}))
-      :logout-endpoint
-      "/auth/logout")]}))
+           :body "No login services available"})))]}))
 
 (defonce server (atom nil))
 

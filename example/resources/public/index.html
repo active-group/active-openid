@@ -19,10 +19,7 @@
             your experience.
             </p>
         <![endif]-->
-        <h1 id="h">You are ...</h1>
-
-        <a href="/auth/login">Login</a>
-        <a href="/auth/logout">Logout</a>
+        <h1 id="h">You are logged in!</h1>
 
         <button id="nuke">Send nukes</button>
         <pre id="output" style="background: #ccc; min-height: 4ex;"></pre>
@@ -30,19 +27,6 @@
 
         <script type="text/javascript">
          console.log("Starting ...");
-         const response = fetch('/auth/loggedin', {
-             credentials: 'include' // Include Session-Cookies
-         });
-
-          response.then((res) =>
-              res.json().then((res) =>
-                  res.loggedIn === true
-                      ?
-                          document.getElementById("h").textContent = "Logged In!"
-                      :
-                          document.getElementById("h").textContent = "Not logged in :-("
-              )
-          );
 
           document.getElementById("nuke").addEventListener("click", (event) => {
               console.log("Try sending nukes");
