@@ -2,7 +2,7 @@
   (:require [active.clojure.config :as active-config]
             [active.clojure.lens :as lens]
             [active.clojure.openid.config :as openid-config]
-            [active.clojure.record :refer [define-record-type]]
+            [active.clojure.record :refer [define-record-type define-singleton-type]]
             [active.clojure.logger.event :as log]
             [clj-http.client :as http-client]
             [clj-jwt.core :as jwt]
@@ -288,9 +288,14 @@
   (get (parse-params request) "state"))
 
 (define-record-type NoAccessToken
-  make-no-access-token
+  really-make-no-access-token
   no-access-token?
-  [error-message no-access-token-error-message])
+  [error-message no-access-token-error-message
+   error-response no-access-token-error-response ;; optional
+   ])
+
+(defn make-no-access-token [msg & [resp]]
+  (really-make-no-access-token msg resp))
 
 (defn- format-access-token
   [{:keys [access-token token-type expires-in refresh-expires-in refresh-token id-token]
@@ -313,13 +318,14 @@
 (defn- fetch-access-token!*
   [access-token-uri payload http-client-opts-map]
   (log/log-event! :trace (log/log-msg "Requesting access token from" access-token-uri "with payload" payload (when http-client-opts-map (str "with " http-client-opts-map))))
-  (try (let [{:keys [status body]} (http-client/post access-token-uri (merge payload default-http-client-opts http-client-opts-map))]
+  (try (let [{:keys [status body] :as response} (http-client/post access-token-uri (merge payload default-http-client-opts http-client-opts-map))]
          (log/log-event! :trace (log/log-msg "Received reply from" access-token-uri ":" status body))
          (case status
            200 (let [access-token-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
                  (log/log-event! :debug (log/log-msg "Received access-token" access-token-edn))
                  (format-access-token access-token-edn))
-           (make-no-access-token (str status " " body))))
+           (make-no-access-token (str status " " body)
+                                 response)))
        (catch Exception e
          (log/log-exception-event! :error (log/log-msg "Received exception from" access-token-uri ":" (.getMessage e)) e)
          (make-no-access-token (.getMessage e)))))
@@ -627,6 +633,53 @@
      (time-format/unparse http-date-formatter dt)
      " GMT")))
 
+(define-singleton-type
+  ErrorCodeInvalidRequest
+  error-code-invalid-request
+  error-code-invalid-request?)
+
+(define-singleton-type
+  ErrorCodeInvalidClient
+  error-code-invalid-client
+  error-code-invalid-client?)
+
+(define-singleton-type
+  ErrorCodeInvalidGrant
+  error-code-invalid-grant
+  error-code-invalid-grant?)
+
+(define-singleton-type
+  ErrorCodeUnauthorizedClient
+  error-code-unauthorized-client
+  error-code-unauthorized-client?)
+
+(define-singleton-type
+  ErrorCodeUnsupportedGrantType
+  error-code-unsupported-grant-type
+  error-code-unsupported-grant-type?)
+
+(define-singleton-type
+  ErrorCodeInvalidScope
+  error-code-invalid-scope
+  error-code-invalid-scope?)
+
+(defn error-code? [x]
+  (or (error-code-invalid-request? x)
+      (error-code-invalid-client? x)
+      (error-code-invalid-grant? x)
+      (error-code-unauthorized-client? x)
+      (error-code-unsupported-grant-type? x)
+      (error-code-invalid-scope? x)))
+
+;; An error response according to section 5.2 of RFC 6749
+;; https://datatracker.ietf.org/doc/html/rfc6749#section-5.2
+(define-record-type ElaborationErrorResponse
+  make-elaboration-error-response
+  elaboration-error-response?
+  [error-code elaboration-error-response-error-code ;; error-code?
+   error-description elaboration-error-response-error-description ;; optional string
+   error-uri elaboration-error-response-error-uri])
+
 (defn wrap-openid-authentication*
   "Middleware that shortcuts execution of the `handler` and redirects the user
   to the login page.
@@ -660,6 +713,7 @@
        |`:type`       | REQUIRED. Type of error. One of `::no-profile`,`::no-auth-code`,`::no-access-token`,`::no-user-info`,`::exception`|
        |`:description`| REQUIRED. Text description of the error |
        |`:message`    | OPTIONAL. Additional error message. Supplied for errors of type `::no-access-token`,`::no-user-info` and `::exception`  |
+       |`:elaboration`| OPTIONAL. May contain a structured error elaboration object  |
        |`:exception`  | OPTIONAL. Exception that was thrown. Supplied for errors of type `::exception`|
      - `original-uri`: The URI of the original request, useful to try request
        again
@@ -768,6 +822,34 @@
                                   :message (.getMessage e)
                                   :exception e} nil))))))
 
+(defn- error-response->elaboration [response]
+  (when (= (:status response)
+           400)
+    (let [body (json/read-str (:body response))]
+      (when-let [ecode (condp = (get body "error")
+                         "invalid_request"
+                         error-code-invalid-request
+
+                         "invalid_client"
+                         error-code-invalid-client
+
+                         "invalid_grant"
+                         error-code-invalid-grant
+
+                         "unauthorized_client"
+                         error-code-unauthorized-client
+
+                         "unsupported_grant_type"
+                         error-code-unsupported-grant-type
+
+                         "invalid_scope"
+                         error-code-invalid-scope
+
+                         nil)]
+        (make-elaboration-error-response ecode
+                                         (get body "error_description")
+                                         (get body "error_uri"))))))
+
 (defn wrap-automatic-refresh
   [& {:keys [error-handler]
       :or {error-handler default-error-handler}}]
@@ -796,7 +878,9 @@
                 (-> (error-handler request
                                    {:type ::no-access-token
                                     :description "Got no access token from refresh request."
-                                    :message (no-access-token-error-message new-access-token)}
+                                    :message (no-access-token-error-message new-access-token)
+                                    :elaboration (when-let [response (no-access-token-error-response new-access-token)]
+                                                   (error-response->elaboration response))}
                                    original-uri)
                     (state (unauthenticated)))
                 ;; else success
