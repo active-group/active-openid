@@ -19,7 +19,8 @@
             [ring.util.response :as response]
             [ring.middleware.defaults :as ring-defaults]
             [ring.middleware.session :as ring-session]
-            [ring.middleware.session.memory :as ring-session-memory]))
+            [ring.middleware.session.memory :as ring-session-memory])
+  (:import (java.net URL)))
 
 (define-record-type OpenidProviderConfig
   {:projection-lens openid-provider-config-projection-lens}
@@ -217,13 +218,28 @@
                        post)]
     (str cleaned-pref "/" cleaned-post)))
 
+(defn- url-schema-host [url]
+  (let [u (URL. url)]
+    (str (.getProtocol u) "://" (.getAuthority u))))
+
+(defn ^:no-doc absolute-redirect-uri-1 ;; public for tests
+  [base-uri uri]
+  ;; uri must be an absolute path, starting with a "/"
+  ;; base-uri must be a full URL, ie http://host/path
+  (if (empty? uri)
+    base-uri
+    ;; Prepend only the 'schema://host" part of base-uri, because when a
+    ;; sub-page is authenticated, like base-uri=http://host/page/,
+    ;; then redirecting of "/page/subpage" should still go to
+    ;; http://host/page/subpage. For simpler cases a simple string
+    ;; concat would have been enough.
+    (concat-uris (url-schema-host base-uri) uri)))
+
 (defn- absolute-redirect-uri
   "Returns the qualified redirect-uri of an `openid-profile`."
   [openid-profile & [uri]]
   (let [base-uri (openid-profile-base-uri openid-profile)]
-    (if (empty? uri)
-      base-uri
-      (concat-uris base-uri uri))))
+    (absolute-redirect-uri-1 base-uri uri)))
 
 (defn- join-scopes
   ;; Returns a string containing all configured

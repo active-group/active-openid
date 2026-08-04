@@ -19,3 +19,11 @@
                                                              ;; Not sure what a profile-map looks like
                                                              {:state-profile-map {:foo :bar}
                                                               :original-uri "http://invalid.invalid/"}])))))))
+
+(t/deftest absolute-redirect-uri-1-test
+  (t/is (= "http://host/foo" (openid/absolute-redirect-uri-1 "http://host/" "/foo")))
+  (t/is (= "http://host/foo" (openid/absolute-redirect-uri-1 "http://host" "/foo")))
+
+  (t/is (= "http://host/foo/bar" (openid/absolute-redirect-uri-1 "http://host/foo" "/foo/bar")))
+  (t/is (= "http://host/foo/bar" (openid/absolute-redirect-uri-1 "http://host/foo/" "/foo/bar"))))
+
