@@ -20,6 +20,7 @@
    :ns-default build}
 
   :active-openid/test
-  {:extra-deps  {io.github.cognitect-labs/test-runner {:git/tag "v0.5.0" :git/sha "b3fd0d2"}}
+  {:extra-deps  {io.github.cognitect-labs/test-runner {:git/tag "v0.5.0" :git/sha "b3fd0d2"}
+                 lambdaisland/uri {:mvn/version "1.19.155"}}
    :extra-paths ["test"]
    :exec-fn     cognitect.test-runner.api/test}}}

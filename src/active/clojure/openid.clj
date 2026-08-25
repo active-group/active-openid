@@ -575,7 +575,7 @@
   no-user-info?
   [error-message no-user-info-error-message])
 
-(defn fetch-user-info!
+(defn- fetch-user-info-from-endpoint!
   "This fetches user info with another request to user-info endpoint.
   See configuration setting [[openid-config/openid-client-user-info-from]]."
   [openid-profile access-token logout-endpoint]
@@ -611,7 +611,7 @@
   [encoded-jwt]
   (jwt/str->jwt encoded-jwt))
 
-(defn fetch-user-info
+(defn- user-info-from-jwt
   "This decodes user-info from the JWT of the access-token.
   See configuration setting [[openid-config/openid-client-user-info-from]]."
   [openid-profile access-token logout-endpoint]
@@ -638,6 +638,11 @@
       (catch Exception e
             (log/log-exception-event! :error (log/log-msg "Exception from decoding JWT access-token" (pr-str access-token) ":" (.getMessage e)) e)
             (make-no-user-info (.getMessage e))))))
+
+(defn- fetch-user-info! [openid-profile access-token logout-endpoint]
+  (case (openid-profile-user-info-from openid-profile)
+    :jwt (user-info-from-jwt openid-profile access-token logout-endpoint)
+    :endpoint (fetch-user-info-from-endpoint! openid-profile access-token logout-endpoint)))
 
 (defn- get-current-time! []
   (time-coerce/from-long
@@ -803,10 +808,7 @@
                         (state (unauthenticated)))
                     (do
                       (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: got access-token" (pr-str access-token)))
-                      (let [user-info-fetcher (case (openid-profile-user-info-from openid-profile)
-                                                :jwt fetch-user-info
-                                                :endpoint fetch-user-info!)
-                            user-info (user-info-fetcher openid-profile access-token logout-endpoint)]
+                      (let [user-info (fetch-user-info! openid-profile access-token logout-endpoint)]
                         (if (no-user-info? user-info)
                           (-> (error-handler request
                                              {:type ::no-user-info
