@@ -10,13 +10,11 @@
   (let [req (fn [auth-state-edn]
               {:session {:active.clojure.openid/auth-state auth-state-edn}})]
     (t/testing "unauthenticated state"
-      (t/is (nil? (openid/maybe-user-info-from-request (req nil))))
-      (t/is (nil? (openid/maybe-user-info-from-request (req [:active.clojure.openid/unauthenticated])))))
+      (t/is (nil? (openid/maybe-user-info-from-request (req nil)))))
 
     (t/testing "authenticated state"
       (t/is (= "Charly"
-               (openid/user-info-name (openid/maybe-user-info-from-request (req [:active.clojure.openid/authenticated
-                                                                                 {:user-info {:name "Charly"}}]))))))
+               (openid/user-info-name (openid/maybe-user-info-from-request (req [:authenticated {:user-info {:name "Charly"}}]))))))
 
     ))
 
@@ -85,14 +83,9 @@
         (t/is (= "login" (:body (handler {:uri "/test" :body "request"})))
               "Uses the response of the login-handler no authentication info")
 
-        (t/is (= "login" (:body (handler {:uri "/test" :body "request"
-                                          :session {:active.clojure.openid/auth-state [:active.clojure.openid/unauthenticated]}})))
-              "Uses the response of the login-handler when not authenticated")
-
         ;; pass request on if authenticated
         (t/is (= "response" (:body (handler {:uri "/test" :body "request"
-                                             :session {:active.clojure.openid/auth-state [:active.clojure.openid/authenticated
-                                                                                          {:user-info {:name "Charly"}}]}})))
+                                             :session {:active.clojure.openid/auth-state [:authenticated {:user-info {:name "Charly"}}]}})))
               "Does normal handling when authenticated")
 
         ;; handle provider callback
@@ -123,6 +116,6 @@
                 (t/is (= {:status 302
                           :headers {"Location" "http://localhost/test"}}
                          (dissoc response :session :body)))
-                (t/is (= :active.clojure.openid/authenticated (first (:active.clojure.openid/auth-state (:session response)))))
+                (t/is (= :authenticated (first (:active.clojure.openid/auth-state (:session response)))))
                 ))))
         ))))

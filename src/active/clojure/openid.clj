@@ -458,12 +458,6 @@
   authenticated?
   [^{:doc "In raw EDN form"} user-info authenticated-user-info])
 
-(define-record-type ^:private AuthenticationStarted
-  make-authentication-started
-  authentication-started?
-  [profile authentication-started-profile
-   original-uri authentication-started-original-uri])
-
 (define-record-type ^:private Unauthenticated
   unauthenticated
   unauthenticated?
@@ -473,25 +467,21 @@
 (def ^{:private true :doc "The keyword the authentication-state lives in the session map."} state-auth-state ::auth-state)
 
 (defn- auth-state-edn
-  ;; possible states are: Authenticated, Unauthenticated and nil.
+  ;; possible states are: Authenticated or Unauthenticated (= nil).
   ([edn]
    (cond
-     (= [::unauthenticated] edn)
-     (unauthenticated)
-     
-     (and (vector? edn) (= ::authenticated (first edn)))
+     (and (vector? edn) (= :authenticated (first edn)))
      (authenticated (:user-info (second edn)))
 
-     :else nil))
+     :else (unauthenticated)))
   ([_ auth-state]
    (cond
-     (unauthenticated? auth-state)
-     [::unauthenticated]
-     
      (authenticated? auth-state)
-     [::authenticated {:user-info (authenticated-user-info auth-state)}]
+     [:authenticated {:user-info (authenticated-user-info auth-state)}]
 
-     :else nil)))
+     :else
+     (do #_(assert (unauthenticated? auth-state))
+         nil))))
 
 (def ^:private state
   (lens/>> state-session state-auth-state auth-state-edn))
@@ -500,11 +490,11 @@
   [request]
   (authenticated? (state request)))
 
-(defn- unauthenticated-request?
-  [request]
-  (let [st (state request)]
-    (or (nil? st)
-        (unauthenticated? st))))
+(define-record-type ^:private AuthenticationStarted
+  make-authentication-started
+  authentication-started?
+  [profile authentication-started-profile
+   original-uri authentication-started-original-uri])
 
 (defn- authentication-started-request?
   [request maybe-endpoint started-store]
@@ -821,9 +811,14 @@
                   (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: not the expected authentication-started request"))
                   (handler request))))
 
-            (unauthenticated-request? request)
+            (authenticated-request? request)
             (do
-              (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated" (pr-str (state request))))
+              (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: already authenticated " (pr-str (state request)) ", handling request" request))
+              (handler request))
+            
+            :else ;; so not authenticated
+            (do
+              (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated"))
               (let [original-uri (:uri request)
                     logins (logins-from-config! config stubborn-idp-login-endpoint)]
                 (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: unauthenticated, calling login handler for" (pr-str logins)))
@@ -831,12 +826,7 @@
                   (istore/remember! started-store state-id (make-authentication-started profile original-uri)
                                     ;; wait max 1h for the callback (a few seconds is probably enough anyway)
                                     (* 60 60)))
-                (login-handler request (logins-availables logins) (logins-unavailables logins))))
-            
-            (authenticated-request? request)
-            (do
-              (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: already authenticated " (pr-str (state request)) ", handling request" request))
-              (handler request)))
+                (login-handler request (logins-availables logins) (logins-unavailables logins)))))
           (catch Exception e
             (log/log-exception-event! :error (log/log-msg "wrap-ensure-authenticated: caught exception" (.getMessage e) request) e)
             (error-handler request {:type ::exception
