@@ -4,6 +4,7 @@
             [active.clojure.openid.config :as openid-config]
             [active.clojure.record :refer [define-record-type define-singleton-type]]
             [active.clojure.logger.event :as log]
+            [active.clojure.openid.intermediate-store :as istore]
             [clj-http.client :as http-client]
             [clj-jwt.core :as jwt]
             [clj-time.core :as time]
@@ -458,9 +459,9 @@
   [^{:doc "In raw EDN form"} user-info authenticated-user-info])
 
 (define-record-type ^:private AuthenticationStarted
-  authentication-started
+  make-authentication-started
   authentication-started?
-  [state-profile-map authentication-started-state-profile-map
+  [profile authentication-started-profile
    original-uri authentication-started-original-uri])
 
 (define-record-type ^:private Unauthenticated
@@ -472,7 +473,7 @@
 (def ^{:private true :doc "The keyword the authentication-state lives in the session map."} state-auth-state ::auth-state)
 
 (defn- auth-state-edn
-  ;; possible states are: Authenticated, AuthenticationStartet, Unauthenticated and nil.
+  ;; possible states are: Authenticated, Unauthenticated and nil.
   ([edn]
    (cond
      (= [::unauthenticated] edn)
@@ -480,10 +481,6 @@
      
      (and (vector? edn) (= ::authenticated (first edn)))
      (authenticated (:user-info (second edn)))
-
-     (and (vector? edn) (= ::authentication-started (first edn)))
-     (authentication-started (:state-profile-map (second edn))
-                             (:original-uri (second edn)))
 
      :else nil))
   ([_ auth-state]
@@ -494,10 +491,6 @@
      (authenticated? auth-state)
      [::authenticated {:user-info (authenticated-user-info auth-state)}]
 
-     (authentication-started? auth-state)
-     [::authentication-started {:state-profile-map (authentication-started-state-profile-map auth-state)
-                                :original-uri (authentication-started-original-uri auth-state)}]
-
      :else nil)))
 
 (def ^:private state
@@ -507,17 +500,20 @@
   [request]
   (authenticated? (state request)))
 
-(defn- authentication-started-request?
-  [request]
-  (authentication-started? (state request)))
-
 (defn- unauthenticated-request?
   [request]
   (let [st (state request)]
     (or (nil? st)
-        (unauthenticated? st)
-        (and (authentication-started? st)
-             (nil? (get-session-state request))))))
+        (unauthenticated? st))))
+
+(defn- authentication-started-request?
+  [request maybe-endpoint started-store]
+  ;; having a dedicated endpoint is recommended; but for legacy reasons, we also detect a request
+  ;; with a 'state' parameter that we find in our started store (will usually be to the :base-uri endpoint)
+  (or (and (not (empty? maybe-endpoint))
+           (string/starts-with? (:uri request) maybe-endpoint))
+      (when-let [id (get-session-state request)]
+        (istore/contains? started-store id))))
 
 (defn wrap-openid-logout
   "Wrapper that removes authentication information from the current session.
@@ -754,91 +750,99 @@
                     error-handler   default-error-handler
                     stubborn-idp-login-endpoint ""}}]
   (log/log-event! :trace (log/log-msg "wrap-openid-authentication*: setting up auth middleware"))
-  (fn [handler]
-    (fn [request]
-      (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: request" request))
-      (try
-        (cond
-          (unauthenticated-request? request)
-          (do
-            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated" (pr-str (state request))))
-            (let [original-uri (:uri request)
-                  logins (logins-from-config! config stubborn-idp-login-endpoint)]
-              (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: unauthenticated, calling login handler for" (pr-str logins)))
-              (-> (login-handler request (logins-availables logins) (logins-unavailables logins))
-                  (state (authentication-started (logins-state-profile-map logins) original-uri)))))
+  (let [started-store (istore/new!)]
+    (fn [handler]
+      (fn [request]
+        (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: request" request))
+        (try ;; TODO: don't catch anything in other 'handler's.
+          (cond
+            ;; this should detect only the callback coming from the IDP; TODO: this should just check for stubborn-idp-login-endpoint, but then that's prefixed by a profile-dependent base-uri, ahhh :-/
+            (authentication-started-request? request nil started-store)
+            (do
+              (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authentication-started" (pr-str (parse-params request))))
+              (if-let [state-from-idp (get-session-state request)]
+                (do
+                  (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, got state from IDP" state-from-idp))
+                  (if-let [authentication-started (istore/take! started-store state-from-idp)]
+                    (let [original-uri (authentication-started-original-uri authentication-started)
+                          openid-profile-edn (authentication-started-profile authentication-started)]
+                      (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, found original uri" original-uri))
+                      (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, trying to authorize with profile" openid-profile-edn))
+                      (cond
+                        (nil? openid-profile-edn)
+                        (-> (error-handler request
+                                           {:type ::no-profile
+                                            :description "The state we got from IDP did not match our's."}
+                                           original-uri)
+                            (state (unauthenticated)))
 
-          ;; this is the request that comes from the IDP
-          (authentication-started-request? request)
-          (do
-            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authentication-started" (pr-str (state request))))
-            (let [state-from-idp (get-session-state request)
-                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, got state from IDP" state-from-idp))
-                  authentication-started (state request)
-                  original-uri (authentication-started-original-uri authentication-started)
-                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, found original uri" original-uri))
-                  state-profile-map (authentication-started-state-profile-map authentication-started)
-                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, found state-profile-edn" state-profile-map))
-                  openid-profile-edn (get state-profile-map state-from-idp)
-                  _ (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, trying to authorize with profile" openid-profile-edn))]
-              (cond
-                (nil? openid-profile-edn)
-                (-> (error-handler request
-                                   {:type ::no-profile
-                                    :description "The state we got from IDP did not match our's."}
-                                   original-uri)
-                    (state (unauthenticated)))
+                        (nil? (get-authorization-code request))
+                        (-> (error-handler request
+                                           {:type ::no-auth-code
+                                            :description "The authorization code from the IDP is missing."}
+                                           original-uri)
+                            (state (unauthenticated)))
 
-                (nil? (get-authorization-code request))
-                (-> (error-handler request
-                                   {:type ::no-auth-code
-                                    :description "The authorization code from the IDP is missing."}
-                                   original-uri)
-                    (state (unauthenticated)))
+                        :else
+                        (let [openid-profile (openid-profile-lens openid-profile-edn)
+                              access-token (fetch-access-token-for-authorization! openid-profile (get-authorization-code request) stubborn-idp-login-endpoint)]
+                          (if (no-access-token? access-token)
+                            (-> (error-handler request
+                                               {:type ::no-access-token
+                                                :description "Got no access token."
+                                                :message (no-access-token-error-message access-token)}
+                                               original-uri)
+                                (state (unauthenticated)))
+                            (do
+                              (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: got access-token" (pr-str access-token)))
+                              (let [user-info (fetch-user-info! openid-profile access-token logout-endpoint)]
+                                (if (no-user-info? user-info)
+                                  (-> (error-handler request
+                                                     {:type ::no-user-info
+                                                      :description "Got no user info."
+                                                      :message (no-user-info-error-message user-info)}
+                                                     original-uri)
+                                      (state (unauthenticated)))
 
-                :else
-                (let [openid-profile (openid-profile-lens openid-profile-edn)
-                      access-token (fetch-access-token-for-authorization! openid-profile (get-authorization-code request) stubborn-idp-login-endpoint)]
-                  (if (no-access-token? access-token)
-                    (-> (error-handler request
-                                       {:type ::no-access-token
-                                        :description "Got no access token."
-                                        :message (no-access-token-error-message access-token)}
-                                       original-uri)
-                        (state (unauthenticated)))
+                                  (do
+                                    (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: got user-info" (pr-str user-info)))
+                                    (let [user-info-edn (user-info-lens {} user-info)]
+                                      (log/log-event! :info (log/log-msg "Successfully logged in user" (user-info-id user-info)))
+                                      (log/log-event! :info (log/log-msg "Redirecting to absolute original-uri" (absolute-redirect-uri openid-profile original-uri)))
+                                      (-> (response/redirect (absolute-redirect-uri openid-profile original-uri))
+                                          (state (authenticated user-info-edn))))))))))))
                     (do
-                      (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: got access-token" (pr-str access-token)))
-                      (let [user-info (fetch-user-info! openid-profile access-token logout-endpoint)]
-                        (if (no-user-info? user-info)
-                          (-> (error-handler request
-                                             {:type ::no-user-info
-                                              :description "Got no user info."
-                                              :message (no-user-info-error-message user-info)}
-                                             original-uri)
-                              (state (unauthenticated)))
+                      ;; callback too late, or with wrong session id?
+                      (log/log-event! :warn (log/log-msg "wrap-ensure-authenticated: authentication-started with unexpected or timed out id" (pr-str state-from-idp)))
+                      (-> (handler request)
+                          (state (unauthenticated))))))
+                (do
+                  ;; no state id in request? so not a authentication-started-request afterall?
+                  (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: not the expected authentication-started request"))
+                  (handler request))))
 
-                          (do
-                            (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: got user-info" (pr-str user-info)))
-                            (let [user-info-edn (user-info-lens {} user-info)]
-                              (log/log-event! :info (log/log-msg "Successfully logged in user" (user-info-id user-info)))
-                              (log/log-event! :info (log/log-msg "Redirecting to absolute original-uri" (absolute-redirect-uri openid-profile original-uri)))
-                              (-> (response/redirect (absolute-redirect-uri openid-profile original-uri))
-                                  (state (authenticated user-info-edn))
-                                  ;; ring.middleware.session way of setting cookie attributes during a session
-                                  ;; NO: This will just set a _new_ session cookie, leading to endless redirect loops
-                                  #_(assoc :session-cookie-attrs {:expires (format-http-datetime (access-token-refresh-expires access-token))}))))))))))))
-
-          (authenticated-request? request)
-          ;; FIXME: consider validity here, maybe refresh token https://auth0.com/docs/authenticate/login/oidc-conformant-authentication/oidc-adoption-refresh-tokens
-          (do
-            (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: already authenticated " (pr-str (state request)) ", handling request" request))
-            (handler request)))
-        (catch Exception e
-          (log/log-exception-event! :error (log/log-msg "wrap-ensure-authenticated: caught exception" (.getMessage e) request) e)
-          (error-handler request {:type ::exception
-                                  :description "An exception was caught."
-                                  :message (.getMessage e)
-                                  :exception e} nil))))))
+            (unauthenticated-request? request)
+            (do
+              (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated" (pr-str (state request))))
+              (let [original-uri (:uri request)
+                    logins (logins-from-config! config stubborn-idp-login-endpoint)]
+                (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: unauthenticated, calling login handler for" (pr-str logins)))
+                (doseq [[state-id profile] (logins-state-profile-map logins)]
+                  (istore/remember! started-store state-id (make-authentication-started profile original-uri)
+                                    ;; wait max 1h for the callback (a few seconds is probably enough anyway)
+                                    (* 60 60)))
+                (login-handler request (logins-availables logins) (logins-unavailables logins))))
+            
+            (authenticated-request? request)
+            (do
+              (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: already authenticated " (pr-str (state request)) ", handling request" request))
+              (handler request)))
+          (catch Exception e
+            (log/log-exception-event! :error (log/log-msg "wrap-ensure-authenticated: caught exception" (.getMessage e) request) e)
+            (error-handler request {:type ::exception
+                                    :description "An exception was caught."
+                                    :message (.getMessage e)
+                                    :exception e} nil)))))))
 
 (defn- error-response->elaboration [response]
   (when (= (:status response)
@@ -884,8 +888,9 @@
               expires (access-token-expires old-access-token)
               now (get-current-time!)]
 
-          (if (time/before? now expires)
-            ;; all good
+          (if (or (time/before? now expires)
+                  (not (access-token-refresh-token old-access-token)))
+            ;; all good, or we don't have a refresh-token
             (handler request)
             ;; else try refresh
             (let [openid-profile (user-info-openid-profile user-info)
