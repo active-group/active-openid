@@ -10,6 +10,11 @@ This library provides utilities to interact with an [[https://openid.net/][OpenI
 =active-openid= will try to discover OpenID endpoints at configured identity
 providers. Multiple identity providers can be configured.
 
+* Changelog
+
+Before upgrading to a new version of Active OpenID, we recommend taking a look
+at the [[CHANGELOG.md][Changelog]].
+
 * Configuration
 
 =active-openid= provides a configuration section for projects using
