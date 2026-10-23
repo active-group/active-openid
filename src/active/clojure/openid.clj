@@ -146,7 +146,7 @@
          (log/log-event! :trace (log/log-msg "Received reply from" provider-config-uri ":" status body))
          (case status
            200 (let [provider-config-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
-                 (log/log-event! :debug (log/log-msg "Received provider config:" provider-config-edn))
+                 (log/log-event! :trace (log/log-msg "Received provider config:" provider-config-edn))
                  (openid-provider-config-lens provider-config-edn))
            (make-openid-instance-not-available provider-name provider-config-uri (str status " " body))))
        (catch Exception e
@@ -339,7 +339,7 @@
          (log/log-event! :trace (log/log-msg "Received reply from" access-token-uri ":" status body))
          (case status
            200 (let [access-token-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
-                 (log/log-event! :debug (log/log-msg "Received access-token" access-token-edn))
+                 (log/log-event! :trace (log/log-msg "Received access-token" access-token-edn))
                  (format-access-token access-token-edn))
            (make-no-access-token (str status " " body)
                                  response)))
@@ -516,7 +516,7 @@
   to `/`."
   [& {:keys [logout-handler] :or {logout-handler   default-logout-handler}}]
   (fn [request]
-    (log/log-event! :debug (log/log-msg "wrap-openid-logout: removing stored credentials"))
+    (log/log-event! :trace (log/log-msg "wrap-openid-logout: removing stored credentials"))
     (-> (logout-handler request)
         (state (unauthenticated)))))
 
@@ -579,7 +579,7 @@
             (log/log-event! :trace (log/log-msg "Received response from " user-info-uri ":" status body))
             (case status
               200 (let [user-data-edn (json/read-str body :key-fn csk/->kebab-case-keyword)]
-                    (log/log-event! :debug (log/log-msg "Received user info:" user-data-edn))
+                    (log/log-event! :trace (log/log-msg "Received user info:" user-data-edn))
                     (make-user-info (:preferred-username user-data-edn)
                                     (:name user-data-edn)
                                     (:email user-data-edn)
@@ -749,7 +749,7 @@
             ;; this should detect only the callback coming from the IDP; TODO: this should just check for stubborn-idp-login-endpoint, but then that's prefixed by a profile-dependent base-uri, ahhh :-/
             (authentication-started-request? request nil started-store)
             (do
-              (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: authentication-started" (pr-str (parse-params request))))
+              (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication-started" (pr-str (parse-params request))))
               (if-let [state-from-idp (get-session-state request)]
                 (do
                   (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: authentication started, got state from IDP" state-from-idp))
@@ -813,12 +813,12 @@
 
             (authenticated-request? request)
             (do
-              (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: already authenticated " (pr-str (state request)) ", handling request" request))
+              (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: already authenticated " (pr-str (state request)) ", handling request" request))
               (handler request))
             
             :else ;; so not authenticated
             (do
-              (log/log-event! :debug (log/log-msg "wrap-ensure-authenticated: unauthenticated"))
+              (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: unauthenticated"))
               (let [original-uri (:uri request)
                     logins (logins-from-config! config stubborn-idp-login-endpoint)]
                 (log/log-event! :trace (log/log-msg "wrap-ensure-authenticated: unauthenticated, calling login handler for" (pr-str logins)))
